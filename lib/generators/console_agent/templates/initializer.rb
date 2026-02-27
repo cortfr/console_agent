@@ -17,9 +17,17 @@ ConsoleAgent.configure do |config|
   # Auto-execute generated code without confirmation (use with caution!)
   config.auto_execute = false
 
-  # Context mode: :full (schema + models + routes) or :minimal (environment only)
-  config.context_mode = :full
+  # Context mode:
+  #   :smart - (default) minimal system prompt, LLM uses tools to fetch schema/model/code details on demand
+  #   :full  - sends all schema, models, and routes in the system prompt every time
+  config.context_mode = :smart
+
+  # Max tool-use rounds per query in :smart mode (safety cap)
+  config.max_tool_rounds = 10
 
   # HTTP timeout in seconds
   config.timeout = 30
+
+  # Debug mode: prints full API requests/responses and tool calls to stderr
+  # config.debug = true
 end

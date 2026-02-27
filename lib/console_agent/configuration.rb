@@ -1,10 +1,11 @@
 module ConsoleAgent
   class Configuration
     PROVIDERS = %i[anthropic openai].freeze
+    CONTEXT_MODES = %i[full smart].freeze
 
     attr_accessor :provider, :api_key, :model, :max_tokens,
                   :auto_execute, :context_mode, :temperature,
-                  :timeout, :debug
+                  :timeout, :debug, :max_tool_rounds
 
     def initialize
       @provider     = :anthropic
@@ -12,10 +13,11 @@ module ConsoleAgent
       @model        = nil
       @max_tokens   = 4096
       @auto_execute = false
-      @context_mode = :full
+      @context_mode = :smart
       @temperature  = 0.2
       @timeout      = 30
       @debug        = false
+      @max_tool_rounds = 10
     end
 
     def resolved_api_key

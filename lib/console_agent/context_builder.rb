@@ -5,19 +5,57 @@ module ConsoleAgent
     end
 
     def build
-      parts = []
-      parts << system_instructions
-      parts << environment_context
-      parts << schema_context   if @config.context_mode == :full
-      parts << models_context   if @config.context_mode == :full
-      parts << routes_context   if @config.context_mode == :full
-      parts.compact.join("\n\n")
+      case @config.context_mode
+      when :smart
+        build_smart
+      else
+        build_full
+      end
     rescue => e
       ConsoleAgent.logger.warn("ConsoleAgent: context build error: #{e.message}")
       system_instructions + "\n\n" + environment_context
     end
 
+    def build_full
+      parts = []
+      parts << system_instructions
+      parts << environment_context
+      parts << schema_context
+      parts << models_context
+      parts << routes_context
+      parts.compact.join("\n\n")
+    end
+
+    def build_smart
+      parts = []
+      parts << smart_system_instructions
+      parts << environment_context
+      parts.compact.join("\n\n")
+    end
+
     private
+
+    def smart_system_instructions
+      <<~PROMPT.strip
+        You are a Ruby on Rails console assistant. The user is in a `rails console` session.
+        You help them query data, debug issues, and understand their application.
+
+        You have tools available to introspect the app's database schema, models, and source code.
+        Use them as needed to write accurate queries. For example, call list_tables to see what
+        tables exist, then describe_table to get column details for the ones you need.
+
+        RULES:
+        - Respond with working Ruby code the user can execute in their console.
+        - Wrap executable code in ```ruby fenced blocks.
+        - Include a brief explanation before or after the code.
+        - Use the app's actual model names, associations, and schema.
+        - Prefer ActiveRecord query interface over raw SQL.
+        - For destructive operations, add a comment warning.
+        - If the request is ambiguous, ask a clarifying question instead of guessing.
+        - Keep code concise and idiomatic.
+        - Use tools to look up schema/model details rather than guessing column names.
+      PROMPT
+    end
 
     def system_instructions
       <<~PROMPT.strip

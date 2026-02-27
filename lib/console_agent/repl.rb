@@ -4,6 +4,7 @@ module ConsoleAgent
       @binding_context = binding_context
       @executor = Executor.new(binding_context)
       @provider = nil
+      @context_builder = nil
       @context = nil
       @history = []
       @total_input_tokens = 0
@@ -99,8 +100,12 @@ module ConsoleAgent
       @provider ||= Providers.build
     end
 
+    def context_builder
+      @context_builder ||= ContextBuilder.new
+    end
+
     def context
-      @context ||= ContextBuilder.new.build
+      @context ||= context_builder.build
     end
 
     def send_query(query, conversation: nil)
@@ -112,7 +117,58 @@ module ConsoleAgent
                    [{ role: :user, content: query }]
                  end
 
-      provider.chat(messages, system_prompt: context)
+      if ConsoleAgent.configuration.context_mode == :smart
+        send_query_with_tools(messages)
+      else
+        provider.chat(messages, system_prompt: context)
+      end
+    end
+
+    def send_query_with_tools(messages)
+      require 'console_agent/tools/registry'
+      tools = Tools::Registry.new
+      max_rounds = ConsoleAgent.configuration.max_tool_rounds
+      total_input = 0
+      total_output = 0
+      result = nil
+
+      max_rounds.times do |round|
+        result = provider.chat_with_tools(messages, tools: tools, system_prompt: context)
+        total_input += result.input_tokens || 0
+        total_output += result.output_tokens || 0
+
+        break unless result.tool_use?
+
+        # Show tool calls in debug mode
+        if ConsoleAgent.configuration.debug
+          result.tool_calls.each do |tc|
+            $stderr.puts "\e[35m[tool] #{tc[:name]}(#{tc[:arguments].inspect})\e[0m"
+          end
+        end
+
+        # Add assistant message with tool calls to conversation
+        messages << provider.format_assistant_message(result)
+
+        # Execute each tool and add results
+        result.tool_calls.each do |tc|
+          tool_result = tools.execute(tc[:name], tc[:arguments])
+
+          if ConsoleAgent.configuration.debug
+            preview = tool_result.to_s
+            preview = preview[0..200] + '...' if preview.length > 200
+            $stderr.puts "\e[35m[tool result] #{preview}\e[0m"
+          end
+
+          messages << provider.format_tool_result(tc[:id], tool_result)
+        end
+      end
+
+      Providers::ChatResult.new(
+        text: result ? result.text : '',
+        input_tokens: total_input,
+        output_tokens: total_output,
+        stop_reason: result ? result.stop_reason : :end_turn
+      )
     end
 
     def track_usage(result)

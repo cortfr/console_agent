@@ -18,14 +18,12 @@ module ConsoleAgent
         $stdout.puts "\e[36m[ConsoleAgent] AI assistant loaded. Try: ai \"show me all tables\"\e[0m"
       end
 
-      # Optionally pre-build context in background
-      if ConsoleAgent.configuration.context_mode == :full
-        Thread.new do
-          require 'console_agent/context_builder'
-          ConsoleAgent::ContextBuilder.new.build
-        rescue => e
-          ConsoleAgent.logger.debug("ConsoleAgent: background context build failed: #{e.message}")
-        end
+      # Pre-build context in background
+      Thread.new do
+        require 'console_agent/context_builder'
+        ConsoleAgent::ContextBuilder.new.build
+      rescue => e
+        ConsoleAgent.logger.debug("ConsoleAgent: background context build failed: #{e.message}")
       end
     end
   end

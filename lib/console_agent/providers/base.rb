@@ -14,6 +14,18 @@ module ConsoleAgent
         raise NotImplementedError, "#{self.class}#chat must be implemented"
       end
 
+      def chat_with_tools(messages, tools:, system_prompt: nil)
+        raise NotImplementedError, "#{self.class}#chat_with_tools must be implemented"
+      end
+
+      def format_assistant_message(_result)
+        raise NotImplementedError, "#{self.class}#format_assistant_message must be implemented"
+      end
+
+      def format_tool_result(_tool_call_id, _result_string)
+        raise NotImplementedError, "#{self.class}#format_tool_result must be implemented"
+      end
+
       private
 
       def build_connection(url, headers = {})
@@ -68,9 +80,13 @@ module ConsoleAgent
 
     class ProviderError < StandardError; end
 
-    ChatResult = Struct.new(:text, :input_tokens, :output_tokens, keyword_init: true) do
+    ChatResult = Struct.new(:text, :input_tokens, :output_tokens, :tool_calls, :stop_reason, keyword_init: true) do
       def total_tokens
         (input_tokens || 0) + (output_tokens || 0)
+      end
+
+      def tool_use?
+        stop_reason == :tool_use && tool_calls && !tool_calls.empty?
       end
     end
 

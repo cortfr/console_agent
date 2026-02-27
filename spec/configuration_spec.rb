@@ -16,8 +16,8 @@ RSpec.describe ConsoleAgent::Configuration do
       expect(config.auto_execute).to eq(false)
     end
 
-    it 'sets context_mode to :full' do
-      expect(config.context_mode).to eq(:full)
+    it 'sets context_mode to :smart' do
+      expect(config.context_mode).to eq(:smart)
     end
 
     it 'sets temperature to 0.2' do
@@ -26,6 +26,10 @@ RSpec.describe ConsoleAgent::Configuration do
 
     it 'sets timeout to 30' do
       expect(config.timeout).to eq(30)
+    end
+
+    it 'sets max_tool_rounds to 10' do
+      expect(config.max_tool_rounds).to eq(10)
     end
   end
 
