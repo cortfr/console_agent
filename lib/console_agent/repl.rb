@@ -133,30 +133,37 @@ module ConsoleAgent
       result = nil
 
       max_rounds.times do |round|
+        if round == 0
+          $stdout.puts "\e[2m  Thinking...\e[0m"
+        end
+
         result = provider.chat_with_tools(messages, tools: tools, system_prompt: context)
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
 
         break unless result.tool_use?
 
-        # Show tool calls in debug mode
-        if ConsoleAgent.configuration.debug
-          result.tool_calls.each do |tc|
-            $stderr.puts "\e[35m[tool] #{tc[:name]}(#{tc[:arguments].inspect})\e[0m"
-          end
+        # Show what the LLM is thinking (if it returned text alongside tool calls)
+        if result.text && !result.text.strip.empty?
+          $stdout.puts "\e[2m  #{result.text.strip}\e[0m"
         end
 
         # Add assistant message with tool calls to conversation
         messages << provider.format_assistant_message(result)
 
-        # Execute each tool and add results
+        # Execute each tool and show progress
         result.tool_calls.each do |tc|
+          args_display = format_tool_args(tc[:name], tc[:arguments])
+          $stdout.puts "\e[33m  -> #{tc[:name]}#{args_display}\e[0m"
+
           tool_result = tools.execute(tc[:name], tc[:arguments])
 
+          # Show a compact preview of the result
+          preview = compact_tool_result(tc[:name], tool_result)
+          $stdout.puts "\e[2m     #{preview}\e[0m"
+
           if ConsoleAgent.configuration.debug
-            preview = tool_result.to_s
-            preview = preview[0..200] + '...' if preview.length > 200
-            $stderr.puts "\e[35m[tool result] #{preview}\e[0m"
+            $stderr.puts "\e[35m[debug tool result] #{tool_result}\e[0m"
           end
 
           messages << provider.format_tool_result(tc[:id], tool_result)
@@ -169,6 +176,77 @@ module ConsoleAgent
         output_tokens: total_output,
         stop_reason: result ? result.stop_reason : :end_turn
       )
+    end
+
+    def format_tool_args(name, args)
+      return '' if args.nil? || args.empty?
+
+      case name
+      when 'describe_table'
+        "(\"#{args['table_name']}\")"
+      when 'describe_model'
+        "(\"#{args['model_name']}\")"
+      when 'read_file'
+        "(\"#{args['path']}\")"
+      when 'search_code'
+        dir = args['directory'] ? ", dir: \"#{args['directory']}\"" : ''
+        "(\"#{args['query']}\"#{dir})"
+      when 'list_files'
+        args['directory'] ? "(\"#{args['directory']}\")" : ''
+      else
+        ''
+      end
+    end
+
+    def compact_tool_result(name, result)
+      return '(empty)' if result.nil? || result.strip.empty?
+
+      case name
+      when 'list_tables'
+        tables = result.split(', ')
+        if tables.length > 8
+          "#{tables.length} tables: #{tables.first(8).join(', ')}..."
+        else
+          "#{tables.length} tables: #{result}"
+        end
+      when 'list_models'
+        lines = result.split("\n")
+        if lines.length > 6
+          "#{lines.length} models: #{lines.first(6).map { |l| l.split(' ').first }.join(', ')}..."
+        else
+          "#{lines.length} models"
+        end
+      when 'describe_table'
+        col_count = result.scan(/^\s{2}\S/).length
+        "#{col_count} columns"
+      when 'describe_model'
+        parts = []
+        assoc_count = result.scan(/^\s{2}(has_many|has_one|belongs_to|has_and_belongs_to_many)/).length
+        val_count = result.scan(/^\s{2}(presence|uniqueness|format|length|numericality|inclusion|exclusion|confirmation|acceptance)/).length
+        parts << "#{assoc_count} associations" if assoc_count > 0
+        parts << "#{val_count} validations" if val_count > 0
+        parts.empty? ? truncate(result, 80) : parts.join(', ')
+      when 'list_files'
+        lines = result.split("\n")
+        "#{lines.length} files"
+      when 'read_file'
+        lines = result.split("\n")
+        "#{lines.length} lines"
+      when 'search_code'
+        if result.start_with?('Found')
+          result.split("\n").first
+        elsif result.start_with?('No matches')
+          result
+        else
+          truncate(result, 80)
+        end
+      else
+        truncate(result, 80)
+      end
+    end
+
+    def truncate(str, max)
+      str.length > max ? str[0..max] + '...' : str
     end
 
     def track_usage(result)
