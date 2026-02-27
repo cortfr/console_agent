@@ -24,7 +24,12 @@ module ConsoleAgent
         response = conn.post('/v1/chat/completions', json_body)
         debug_response(response.body)
         data = parse_response(response)
-        extract_text(data)
+        usage = data['usage'] || {}
+        ChatResult.new(
+          text: extract_text(data),
+          input_tokens: usage['prompt_tokens'],
+          output_tokens: usage['completion_tokens']
+        )
       end
 
       private

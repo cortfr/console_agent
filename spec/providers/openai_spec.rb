@@ -18,7 +18,7 @@ RSpec.describe ConsoleAgent::Providers::OpenAI do
   describe '#chat' do
     let(:messages) { [{ role: :user, content: 'Hello' }] }
 
-    it 'sends a request to the OpenAI API' do
+    it 'sends a request to the OpenAI API and returns a ChatResult' do
       stub_request(:post, 'https://api.openai.com/v1/chat/completions')
         .with(
           headers: {
@@ -29,13 +29,17 @@ RSpec.describe ConsoleAgent::Providers::OpenAI do
         .to_return(
           status: 200,
           body: {
-            choices: [{ message: { content: 'Hello back!' } }]
+            choices: [{ message: { content: 'Hello back!' } }],
+            usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
 
       result = provider.chat(messages, system_prompt: 'Be helpful')
-      expect(result).to eq('Hello back!')
+      expect(result.text).to eq('Hello back!')
+      expect(result.input_tokens).to eq(20)
+      expect(result.output_tokens).to eq(8)
+      expect(result.total_tokens).to eq(28)
     end
 
     it 'prepends system message when system_prompt is given' do

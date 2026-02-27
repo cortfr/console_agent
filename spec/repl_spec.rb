@@ -20,10 +20,18 @@ RSpec.describe ConsoleAgent::Repl do
       .and_return(double(build: 'test context'))
   end
 
+  def chat_result(text, input_tokens: 100, output_tokens: 50)
+    ConsoleAgent::Providers::ChatResult.new(
+      text: text,
+      input_tokens: input_tokens,
+      output_tokens: output_tokens
+    )
+  end
+
   describe '#one_shot' do
     it 'sends query to provider and displays response' do
       allow(mock_provider).to receive(:chat).and_return(
-        "Here is the code:\n```ruby\n1 + 1\n```"
+        chat_result("Here is the code:\n```ruby\n1 + 1\n```")
       )
       allow($stdin).to receive(:gets).and_return("y\n")
 
@@ -32,7 +40,9 @@ RSpec.describe ConsoleAgent::Repl do
     end
 
     it 'returns nil when provider returns no code' do
-      allow(mock_provider).to receive(:chat).and_return('Just an explanation, no code.')
+      allow(mock_provider).to receive(:chat).and_return(
+        chat_result('Just an explanation, no code.')
+      )
 
       result = repl.one_shot('explain something')
       expect(result).to be_nil
@@ -49,7 +59,7 @@ RSpec.describe ConsoleAgent::Repl do
   describe '#explain' do
     it 'displays response without executing' do
       allow(mock_provider).to receive(:chat).and_return(
-        "Explanation:\n```ruby\nUser.count\n```"
+        chat_result("Explanation:\n```ruby\nUser.count\n```")
       )
 
       # explain should never prompt for execution

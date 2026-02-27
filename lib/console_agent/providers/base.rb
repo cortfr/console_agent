@@ -68,6 +68,12 @@ module ConsoleAgent
 
     class ProviderError < StandardError; end
 
+    ChatResult = Struct.new(:text, :input_tokens, :output_tokens, keyword_init: true) do
+      def total_tokens
+        (input_tokens || 0) + (output_tokens || 0)
+      end
+    end
+
     def self.build(config = ConsoleAgent.configuration)
       case config.provider
       when :anthropic
