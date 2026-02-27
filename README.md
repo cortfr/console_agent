@@ -2,6 +2,8 @@
 
 An AI-powered assistant for your Rails console. Ask questions in plain English, get executable Ruby code.
 
+It's like Claude Code embedded in your Rails Console.
+
 ConsoleAgent connects your `rails console` to an LLM (Claude or GPT) and gives it tools to introspect your app's database schema, models, and source code. It figures out what it needs on its own, so you don't pay for 50K tokens of context on every query.
 
 ## Quick Start
@@ -186,8 +188,110 @@ ConsoleAgent.configure { |c| c.context_mode = :full }
 | `list_files` | Ruby files in a directory |
 | `read_file` | Read a source file (capped at 200 lines) |
 | `search_code` | Grep for a pattern across Ruby files |
+| `ask_user` | Ask the console user a clarifying question |
+| `save_memory` | Persist a learned fact for future sessions |
+| `recall_memories` | Search saved memories |
+| `load_skill` | Load full instructions for a skill |
 
 The LLM decides which tools to call based on your question. You can see the tool calls happening in real time.
+
+## Memories & Skills
+
+ConsoleAgent can remember what it learns about your codebase across sessions and load reusable skill instructions on demand.
+
+### Memories
+
+When the AI investigates something complex (like how sharding works in your app), it can save what it learned for next time. Memories are stored in `.console_agent/memories.yml` in your Rails app.
+
+```
+ai> how many users are on this shard?
+  Thinking...
+  -> search_code("shard")
+     Found 50 matches
+  -> read_file("config/initializers/sharding.rb")
+     202 lines
+  -> save_memory("Sharding architecture")
+     Memory saved: "Sharding architecture"
+
+Each shard is a separate database. User.count returns the count for the current shard only.
+
+  User.count
+
+[tokens in: 2,340 | out: 120 | total: 2,460]
+```
+
+Next session, the AI already knows:
+
+```
+ai> count users on this shard
+  Thinking...
+
+  User.count
+
+[tokens in: 580 | out: 45 | total: 625]
+```
+
+The memory file is human-editable YAML:
+
+```yaml
+# .console_agent/memories.yml
+memories:
+  - id: mem_1709123456_42
+    name: Sharding architecture
+    description: "App uses database-per-shard. Each shard is a separate DB. User.count only counts the current shard."
+    tags: [database, sharding]
+    created_at: "2026-02-27T10:30:00Z"
+```
+
+You can commit this file to your repo so the whole team benefits, or gitignore it for personal use.
+
+### Skills
+
+Skills are reusable instruction files that teach the AI how to handle specific tasks. Store them in `.console_agent/skills/` as markdown files with YAML frontmatter:
+
+```markdown
+# .console_agent/skills/sharding.md
+---
+name: Sharded database queries
+description: How to query across database shards. Use when user asks about counting records across shards or shard-specific operations.
+---
+
+## Instructions
+
+This app uses Apartment with one database per shard.
+- `User.count` only counts the current shard
+- To count across all shards: `Shard.all.sum { |s| s.switch { User.count } }`
+- Current shard: `Apartment::Tenant.current`
+```
+
+Only the skill name and description are sent to the AI on every request (~100 tokens per skill). The full instructions are loaded on demand via the `load_skill` tool only when relevant.
+
+### Storage
+
+By default, memories and skills are stored on the filesystem at `Rails.root/.console_agent/`. This works for development and for production environments with a persistent filesystem.
+
+For containers or other environments where the filesystem is ephemeral, you have two options:
+
+**Option A: Commit to your repo.** Create `.console_agent/memories.yml` and `.console_agent/skills/*.md` in your codebase. They'll be baked into your Docker image.
+
+**Option B: Custom storage adapter.** Implement the storage interface and plug it in:
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.storage_adapter = MyS3Storage.new(bucket: 'my-bucket', prefix: 'console_agent/')
+end
+```
+
+A storage adapter just needs four methods: `read(key)`, `write(key, content)`, `list(pattern)`, and `exists?(key)`.
+
+To disable memories or skills:
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.memories_enabled = false
+  config.skills_enabled = false
+end
+```
 
 ## Providers
 

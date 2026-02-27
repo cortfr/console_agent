@@ -30,6 +30,8 @@ module ConsoleAgent
       parts = []
       parts << smart_system_instructions
       parts << environment_context
+      parts << memory_context
+      parts << skills_context
       parts.compact.join("\n\n")
     end
 
@@ -47,6 +49,14 @@ module ConsoleAgent
         You also have an ask_user tool to ask the console user clarifying questions. Use it when
         you need specific information to write accurate code — such as which user they are, which
         record to target, or what value to use.
+
+        You have memory and skill tools:
+        - save_memory: persist facts you learn about this codebase for future sessions
+        - recall_memories: search your saved memories for details
+        - load_skill: load detailed instructions for specialized tasks
+
+        Before answering complex questions, check if you have relevant memories or skills.
+        When you discover important patterns about this app, save them as memories.
 
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
@@ -184,6 +194,40 @@ module ConsoleAgent
       lines.join("\n")
     rescue => e
       ConsoleAgent.logger.debug("ConsoleAgent: route introspection failed: #{e.message}")
+      nil
+    end
+
+    def memory_context
+      return nil unless @config.memories_enabled
+
+      require 'console_agent/tools/memory_tools'
+      summaries = Tools::MemoryTools.new.memory_summaries
+      return nil if summaries.nil? || summaries.empty?
+
+      lines = ["## Memories (things you learned about this codebase)"]
+      lines.concat(summaries)
+      lines << ""
+      lines << "Use recall_memories for full details. Use save_memory to persist new learnings."
+      lines.join("\n")
+    rescue => e
+      ConsoleAgent.logger.debug("ConsoleAgent: memory context failed: #{e.message}")
+      nil
+    end
+
+    def skills_context
+      return nil unless @config.skills_enabled
+
+      require 'console_agent/tools/skill_tools'
+      summaries = Tools::SkillTools.new.skill_summaries
+      return nil if summaries.nil? || summaries.empty?
+
+      lines = ["## Available Skills"]
+      lines.concat(summaries)
+      lines << ""
+      lines << "Use load_skill to load full instructions when a skill is relevant."
+      lines.join("\n")
+    rescue => e
+      ConsoleAgent.logger.debug("ConsoleAgent: skills context failed: #{e.message}")
       nil
     end
 

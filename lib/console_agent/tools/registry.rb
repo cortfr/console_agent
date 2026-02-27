@@ -158,6 +158,66 @@ module ConsoleAgent
           },
           handler: ->(args) { ask_user(args['question']) }
         )
+
+        register_memory_tools
+        register_skill_tools
+      end
+
+      def register_memory_tools
+        return unless ConsoleAgent.configuration.memories_enabled
+
+        require 'console_agent/tools/memory_tools'
+        memory = MemoryTools.new
+
+        register(
+          name: 'save_memory',
+          description: 'Save a fact or pattern you learned about this codebase for future sessions. Use after discovering how something works (e.g. sharding, auth, custom business logic).',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'Short name for this memory (e.g. "Sharding architecture")' },
+              'description' => { 'type' => 'string', 'description' => 'Detailed description of what you learned' },
+              'tags' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional tags (e.g. ["database", "sharding"])' }
+            },
+            'required' => ['name', 'description']
+          },
+          handler: ->(args) {
+            memory.save_memory(name: args['name'], description: args['description'], tags: args['tags'] || [])
+          }
+        )
+
+        register(
+          name: 'recall_memories',
+          description: 'Search your saved memories about this codebase. Call with no args to list all, or pass a query/tag to filter.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'query' => { 'type' => 'string', 'description' => 'Search term to filter by name, description, or tags' },
+              'tag' => { 'type' => 'string', 'description' => 'Filter by a specific tag' }
+            }
+          },
+          handler: ->(args) { memory.recall_memories(query: args['query'], tag: args['tag']) }
+        )
+      end
+
+      def register_skill_tools
+        return unless ConsoleAgent.configuration.skills_enabled
+
+        require 'console_agent/tools/skill_tools'
+        skills = SkillTools.new
+
+        register(
+          name: 'load_skill',
+          description: 'Load full instructions for a skill listed in the system prompt. Use when a skill is relevant to the current task.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The skill name to load' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { skills.load_skill(name: args['name']) }
+        )
       end
 
       def ask_user(question)

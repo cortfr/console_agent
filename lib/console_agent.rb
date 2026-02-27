@@ -13,6 +13,23 @@ module ConsoleAgent
 
     def reset_configuration!
       @configuration = Configuration.new
+      reset_storage!
+    end
+
+    def storage
+      @storage ||= begin
+        adapter = configuration.storage_adapter
+        if adapter
+          adapter
+        else
+          require 'console_agent/storage/file_storage'
+          Storage::FileStorage.new
+        end
+      end
+    end
+
+    def reset_storage!
+      @storage = nil
     end
 
     def logger
@@ -48,6 +65,8 @@ module ConsoleAgent
       lines << "  Timeout:        #{c.timeout}s"
       lines << "  Max tool rounds:#{c.max_tool_rounds}" if c.context_mode == :smart
       lines << "  Auto-execute:   #{c.auto_execute}"
+      lines << "  Memories:       #{c.memories_enabled}"
+      lines << "  Skills:         #{c.skills_enabled}"
       lines << "  Debug:          #{c.debug}"
       $stdout.puts lines.join("\n")
       nil

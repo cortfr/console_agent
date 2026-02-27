@@ -5,7 +5,8 @@ module ConsoleAgent
 
     attr_accessor :provider, :api_key, :model, :max_tokens,
                   :auto_execute, :context_mode, :temperature,
-                  :timeout, :debug, :max_tool_rounds
+                  :timeout, :debug, :max_tool_rounds,
+                  :storage_adapter, :memories_enabled, :skills_enabled
 
     def initialize
       @provider     = :anthropic
@@ -18,6 +19,9 @@ module ConsoleAgent
       @timeout      = 30
       @debug        = false
       @max_tool_rounds = 10
+      @storage_adapter  = nil
+      @memories_enabled = true
+      @skills_enabled   = true
     end
 
     def resolved_api_key
