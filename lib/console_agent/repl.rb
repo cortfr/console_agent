@@ -132,6 +132,8 @@ module ConsoleAgent
       total_output = 0
       result = nil
 
+      exhausted = false
+
       max_rounds.times do |round|
         if round == 0
           $stdout.puts "\e[2m  Thinking...\e[0m"
@@ -172,6 +174,17 @@ module ConsoleAgent
 
           messages << provider.format_tool_result(tc[:id], tool_result)
         end
+
+        exhausted = true if round == max_rounds - 1
+      end
+
+      # If we hit the tool round limit, force a final response without tools
+      if exhausted
+        $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: ConsoleAgent.configure { |c| c.max_tool_rounds = 200 }\e[0m"
+        messages << { role: :user, content: "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far." }
+        result = provider.chat(messages, system_prompt: context)
+        total_input += result.input_tokens || 0
+        total_output += result.output_tokens || 0
       end
 
       Providers::ChatResult.new(

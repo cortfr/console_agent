@@ -18,7 +18,7 @@ module ConsoleAgent
       @temperature  = 0.2
       @timeout      = 30
       @debug        = false
-      @max_tool_rounds = 10
+      @max_tool_rounds = 100
       @storage_adapter  = nil
       @memories_enabled = true
       @skills_enabled   = true

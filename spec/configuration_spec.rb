@@ -28,8 +28,8 @@ RSpec.describe ConsoleAgent::Configuration do
       expect(config.timeout).to eq(30)
     end
 
-    it 'sets max_tool_rounds to 10' do
-      expect(config.max_tool_rounds).to eq(10)
+    it 'sets max_tool_rounds to 100' do
+      expect(config.max_tool_rounds).to eq(100)
     end
   end
 
