@@ -55,7 +55,9 @@ module ConsoleAgent
         - recall_memories: search your saved memories for details
         - load_skill: load detailed instructions for specialized tasks
 
-        Before answering complex questions, check if you have relevant memories or skills.
+        IMPORTANT: Check the Memories section below BEFORE answering. If a memory is relevant,
+        use recall_memories to get full details and apply that knowledge to your answer.
+        When you use a memory, mention it briefly (e.g. "Based on what I know about sharding...").
         When you discover important patterns about this app, save them as memories.
 
         RULES:
@@ -204,10 +206,10 @@ module ConsoleAgent
       summaries = Tools::MemoryTools.new.memory_summaries
       return nil if summaries.nil? || summaries.empty?
 
-      lines = ["## Memories (things you learned about this codebase)"]
+      lines = ["## Memories"]
       lines.concat(summaries)
       lines << ""
-      lines << "Use recall_memories for full details. Use save_memory to persist new learnings."
+      lines << "Call recall_memories to get details before answering. Do NOT guess from the name alone."
       lines.join("\n")
     rescue => e
       ConsoleAgent.logger.debug("ConsoleAgent: memory context failed: #{e.message}")

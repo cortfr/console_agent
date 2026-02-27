@@ -88,14 +88,14 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
       expect(tools.memory_summaries).to be_nil
     end
 
-    it 'returns summary lines for each memory' do
-      tools.save_memory(name: 'Sharding', description: 'Separate DBs per shard')
+    it 'returns name and tags for each memory' do
+      tools.save_memory(name: 'Sharding', description: 'Separate DBs per shard', tags: ['database'])
       tools.save_memory(name: 'Auth', description: 'Uses Devise')
 
       summaries = tools.memory_summaries
       expect(summaries.length).to eq(2)
-      expect(summaries[0]).to eq('- Sharding: Separate DBs per shard')
-      expect(summaries[1]).to eq('- Auth: Uses Devise')
+      expect(summaries[0]).to eq('- Sharding [database]')
+      expect(summaries[1]).to eq('- Auth')
     end
   end
 end

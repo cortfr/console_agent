@@ -20,7 +20,8 @@ module ConsoleAgent
         }
         memories << memory
         write_memories(memories)
-        "Memory saved: \"#{name}\""
+        path = @storage.respond_to?(:root_path) ? File.join(@storage.root_path, MEMORIES_KEY) : MEMORIES_KEY
+        "Memory saved: \"#{name}\" (#{path})"
       rescue Storage::StorageError => e
         "FAILED to save (#{e.message}). Add this manually to .console_agent/memories.yml:\n" \
         "- name: #{name}\n  description: #{description}\n  tags: #{Array(tags).inspect}"
@@ -58,7 +59,11 @@ module ConsoleAgent
         memories = load_memories
         return nil if memories.empty?
 
-        memories.map { |m| "- #{m['name']}: #{m['description']}" }
+        memories.map { |m|
+          tags = Array(m['tags'])
+          tag_str = tags.empty? ? '' : " [#{tags.join(', ')}]"
+          "- #{m['name']}#{tag_str}"
+        }
       end
 
       private
