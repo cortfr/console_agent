@@ -9,8 +9,8 @@ module ConsoleAgent
     end
 
     def extract_code(response)
-      blocks = response.scan(CODE_REGEX).flatten
-      blocks.join("\n\n")
+      match = response.match(CODE_REGEX)
+      match ? match[1].strip : ''
     end
 
     def display_response(response)

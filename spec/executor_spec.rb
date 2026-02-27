@@ -15,10 +15,10 @@ RSpec.describe ConsoleAgent::Executor do
         That will count users.
       TEXT
 
-      expect(executor.extract_code(response)).to eq("User.count\n")
+      expect(executor.extract_code(response)).to eq("User.count")
     end
 
-    it 'extracts and joins multiple ruby code blocks' do
+    it 'extracts only the first ruby code block' do
       response = <<~TEXT
         First:
         ```ruby
@@ -31,8 +31,7 @@ RSpec.describe ConsoleAgent::Executor do
       TEXT
 
       code = executor.extract_code(response)
-      expect(code).to include('User.count')
-      expect(code).to include('Post.count')
+      expect(code).to eq('User.count')
     end
 
     it 'returns empty string when no code blocks found' do
@@ -49,7 +48,7 @@ RSpec.describe ConsoleAgent::Executor do
         ```
       TEXT
 
-      expect(executor.extract_code(response)).to eq("User.all\n")
+      expect(executor.extract_code(response)).to eq("User.all")
     end
   end
 
