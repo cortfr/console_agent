@@ -19,17 +19,27 @@ bundle install
 rails generate console_agent:install
 ```
 
-Set your API key and open a console:
+Set your API key (pick one):
 
 ```bash
+# Option A: environment variable
 export ANTHROPIC_API_KEY=sk-ant-...
-rails console
+
+# Option B: in the initializer
+# config.api_key = 'sk-ant-...'
 ```
 
-Then:
+Open a console and go:
 
 ```ruby
+rails console
 ai "show me all users who signed up this week"
+```
+
+You can also set or change your API key at runtime in the console:
+
+```ruby
+ConsoleAgent.configure { |c| c.api_key = 'sk-ant-...' }
 ```
 
 ## Console Commands
@@ -137,12 +147,12 @@ ConsoleAgent.configure do |config|
 end
 ```
 
-You can also change settings at runtime in the console:
+All settings can be changed at runtime in the console:
 
 ```ruby
+ConsoleAgent.configure { |c| c.api_key = 'sk-ant-...' }
 ConsoleAgent.configure { |c| c.debug = true }
-ConsoleAgent.configure { |c| c.provider = :openai }
-ENV['OPENAI_API_KEY'] = 'sk-...'
+ConsoleAgent.configure { |c| c.provider = :openai; c.api_key = 'sk-...' }
 ```
 
 ## Context Modes
@@ -196,33 +206,19 @@ ConsoleAgent.configure do |config|
 end
 ```
 
-## Docker Setup
+## Local Development
 
-If your Rails app runs in Docker, mount the gem source as a volume.
-
-In `docker-compose.yml`:
-
-```yaml
-volumes:
-  - /path/to/console_agent:/console_agent
-```
-
-In `Gemfile`:
+To develop the gem locally against a Rails app, use a path reference in your Gemfile:
 
 ```ruby
-gem 'console_agent', path: '/console_agent', group: :development
+gem 'console_agent', path: '/path/to/console_agent'
 ```
 
-For Docker builds (where the gem source isn't available yet), add a stub to your Dockerfile before `bundle install`:
+Switch back to the published gem when you're done:
 
-```dockerfile
-RUN mkdir -p /console_agent/lib/console_agent && \
-    echo "module ConsoleAgent; VERSION = '0.1.0'; end" > /console_agent/lib/console_agent/version.rb && \
-    echo "require 'console_agent/version'" > /console_agent/lib/console_agent.rb && \
-    printf "require_relative 'lib/console_agent/version'\nGem::Specification.new do |s|\n  s.name = 'console_agent'\n  s.version = ConsoleAgent::VERSION\n  s.summary = 'stub'\n  s.authors = ['x']\n  s.files = ['lib/console_agent.rb']\n  s.add_dependency 'rails', '>= 5.0'\n  s.add_dependency 'faraday', '>= 1.0'\nend\n" > /console_agent/console_agent.gemspec
+```ruby
+gem 'console_agent'
 ```
-
-The volume mount overwrites the stub at runtime with the real source.
 
 ## Requirements
 
