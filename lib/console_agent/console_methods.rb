@@ -46,23 +46,6 @@ module ConsoleAgent
       nil
     end
 
-    def ai_skills
-      require 'console_agent/tools/skill_tools'
-      tools = ConsoleAgent::Tools::SkillTools.new
-      summaries = tools.skill_summaries
-
-      if summaries.nil? || summaries.empty?
-        $stdout.puts "\e[2mNo skills found. Add .md files to .console_agent/skills/\e[0m"
-      else
-        $stdout.puts "\e[36m[Skills]\e[0m"
-        summaries.each { |s| $stdout.puts s }
-        storage = ConsoleAgent.storage
-        path = storage.respond_to?(:root_path) ? File.join(storage.root_path, 'skills') : 'skills/'
-        $stdout.puts "\e[2mStored in: #{path}\e[0m"
-      end
-      nil
-    end
-
     def ai_export(n = nil)
       storage = ConsoleAgent.storage
       keys = storage.list('memories/*.md').sort
@@ -96,8 +79,7 @@ module ConsoleAgent
         $stderr.puts "\e[33m  ai? \"query\" - explain only, no execution\e[0m"
         $stderr.puts "\e[33m  ai_status   - show current configuration\e[0m"
         $stderr.puts "\e[33m  ai_memories - show recent memories (ai_memories(n) for last n)\e[0m"
-        $stderr.puts "\e[33m  ai_skills   - list available skills\e[0m"
-        $stderr.puts "\e[33m  ai_export   - dump memory YAML to paste into codebase\e[0m"
+        $stderr.puts "\e[33m  ai_export   - show memory files to commit to codebase\e[0m"
         return nil
       end
 

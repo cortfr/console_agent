@@ -180,7 +180,6 @@ module ConsoleAgent
         )
 
         register_memory_tools
-        register_skill_tools
       end
 
       def register_memory_tools
@@ -230,26 +229,6 @@ module ConsoleAgent
             }
           },
           handler: ->(args) { memory.recall_memories(query: args['query'], tag: args['tag']) }
-        )
-      end
-
-      def register_skill_tools
-        return unless ConsoleAgent.configuration.skills_enabled
-
-        require 'console_agent/tools/skill_tools'
-        skills = SkillTools.new
-
-        register(
-          name: 'load_skill',
-          description: 'Load full instructions for a skill listed in the system prompt. Use when a skill is relevant to the current task.',
-          parameters: {
-            'type' => 'object',
-            'properties' => {
-              'name' => { 'type' => 'string', 'description' => 'The skill name to load' }
-            },
-            'required' => ['name']
-          },
-          handler: ->(args) { skills.load_skill(name: args['name']) }
         )
       end
 

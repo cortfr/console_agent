@@ -233,8 +233,6 @@ module ConsoleAgent
         "(\"#{args['name']}\")"
       when 'recall_memories'
         args['query'] ? "(\"#{args['query']}\")" : ''
-      when 'load_skill'
-        "(\"#{args['name']}\")"
       else
         ''
       end
@@ -289,9 +287,6 @@ module ConsoleAgent
       when 'recall_memories'
         chunks = result.split("\n\n")
         chunks.length > 1 ? "#{chunks.length} memories found" : truncate(result, 80)
-      when 'load_skill'
-        lines = result.split("\n")
-        "#{lines.length} lines of instructions"
       else
         truncate(result, 80)
       end

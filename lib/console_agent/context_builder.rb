@@ -31,7 +31,6 @@ module ConsoleAgent
       parts << smart_system_instructions
       parts << environment_context
       parts << memory_context
-      parts << skills_context
       parts.compact.join("\n\n")
     end
 
@@ -50,12 +49,11 @@ module ConsoleAgent
         you need specific information to write accurate code — such as which user they are, which
         record to target, or what value to use.
 
-        You have memory and skill tools:
-        - save_memory: persist facts you learn about this codebase for future sessions.
+        You have memory tools to persist what you learn across sessions:
+        - save_memory: persist facts or procedures you learn about this codebase.
           If a memory with the same name already exists, it will be updated in place.
         - delete_memory: remove a memory by name
         - recall_memories: search your saved memories for details
-        - load_skill: load detailed instructions for specialized tasks
 
         IMPORTANT: Check the Memories section below BEFORE answering. If a memory is relevant,
         use recall_memories to get full details and apply that knowledge to your answer.
@@ -215,23 +213,6 @@ module ConsoleAgent
       lines.join("\n")
     rescue => e
       ConsoleAgent.logger.debug("ConsoleAgent: memory context failed: #{e.message}")
-      nil
-    end
-
-    def skills_context
-      return nil unless @config.skills_enabled
-
-      require 'console_agent/tools/skill_tools'
-      summaries = Tools::SkillTools.new.skill_summaries
-      return nil if summaries.nil? || summaries.empty?
-
-      lines = ["## Available Skills"]
-      lines.concat(summaries)
-      lines << ""
-      lines << "Use load_skill to load full instructions when a skill is relevant."
-      lines.join("\n")
-    rescue => e
-      ConsoleAgent.logger.debug("ConsoleAgent: skills context failed: #{e.message}")
       nil
     end
 

@@ -66,7 +66,6 @@ module ConsoleAgent
       lines << "  Max tool rounds:#{c.max_tool_rounds}" if c.context_mode == :smart
       lines << "  Auto-execute:   #{c.auto_execute}"
       lines << "  Memories:       #{c.memories_enabled}"
-      lines << "  Skills:         #{c.skills_enabled}"
       lines << "  Debug:          #{c.debug}"
       $stdout.puts lines.join("\n")
       nil

@@ -9,7 +9,7 @@ RSpec.describe ConsoleAgent::Tools::Registry do
       names = registry.definitions.map { |d| d[:name] }
       expect(names).to include('list_tables', 'describe_table', 'list_models', 'describe_model',
                                'list_files', 'read_file', 'search_code', 'ask_user',
-                               'save_memory', 'delete_memory', 'recall_memories', 'load_skill')
+                               'save_memory', 'delete_memory', 'recall_memories')
     end
   end
 
