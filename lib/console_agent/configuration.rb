@@ -36,9 +36,9 @@ module ConsoleAgent
 
       case @provider
       when :anthropic
-        'claude-sonnet-4-20250514'
+        'claude-opus-4-6'
       when :openai
-        'gpt-4o'
+        'gpt-5.3-codex'
       end
     end
 

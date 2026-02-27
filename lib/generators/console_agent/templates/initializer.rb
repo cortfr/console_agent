@@ -5,8 +5,8 @@ ConsoleAgent.configure do |config|
   # API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
   # config.api_key = 'sk-...'
 
-  # Model override (defaults: claude-sonnet-4-20250514 for Anthropic, gpt-4o for OpenAI)
-  # config.model = 'claude-sonnet-4-20250514'
+  # Model override (defaults: claude-opus-4-6 for Anthropic, gpt-5.3-codex for OpenAI)
+  # config.model = 'claude-opus-4-6'
 
   # Max tokens for LLM response
   config.max_tokens = 4096

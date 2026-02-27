@@ -65,12 +65,12 @@ RSpec.describe ConsoleAgent::Configuration do
 
     it 'returns default model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_model).to eq('claude-sonnet-4-20250514')
+      expect(config.resolved_model).to eq('claude-opus-4-6')
     end
 
     it 'returns default model for openai' do
       config.provider = :openai
-      expect(config.resolved_model).to eq('gpt-4o')
+      expect(config.resolved_model).to eq('gpt-5.3-codex')
     end
   end
 

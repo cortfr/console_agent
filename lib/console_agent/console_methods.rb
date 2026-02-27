@@ -1,11 +1,16 @@
 module ConsoleAgent
   module ConsoleMethods
+    def ai_status
+      ConsoleAgent.status
+    end
+
     def ai(query = nil)
       if query.nil?
         $stderr.puts "\e[33mUsage: ai \"your question here\"\e[0m"
         $stderr.puts "\e[33m  ai  \"query\" - ask + confirm execution\e[0m"
         $stderr.puts "\e[33m  ai! \"query\" - enter interactive mode (or ai! with no args)\e[0m"
         $stderr.puts "\e[33m  ai? \"query\" - explain only, no execution\e[0m"
+        $stderr.puts "\e[33m  ai_status   - show current configuration\e[0m"
         return nil
       end
 
