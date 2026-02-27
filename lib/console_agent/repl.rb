@@ -1,3 +1,5 @@
+require 'readline'
+
 module ConsoleAgent
   class Repl
     def initialize(binding_context)
@@ -9,6 +11,7 @@ module ConsoleAgent
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @input_history = []
     end
 
     def one_shot(query)
@@ -52,17 +55,26 @@ module ConsoleAgent
       @total_output_tokens = 0
 
       loop do
-        $stdout.print "\e[33mai> \e[0m"
-        input = $stdin.gets
-        break if input.nil?
+        input = Readline.readline("\e[33mai> \e[0m", false)
+        break if input.nil? # Ctrl-D
 
         input = input.strip
         break if input.downcase == 'exit' || input.downcase == 'quit'
         next if input.empty?
 
+        # Add to Readline history (avoid consecutive duplicates)
+        Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
+
         @history << { role: :user, content: input }
 
-        result = send_query(input, conversation: @history)
+        begin
+          result = send_query(input, conversation: @history)
+        rescue Interrupt
+          $stdout.puts "\n\e[33m  Aborted.\e[0m"
+          @history.pop # Remove the user message that never got a response
+          next
+        end
+
         track_usage(result)
         code = @executor.display_response(result.text)
         display_usage(result, show_session: true)
@@ -103,6 +115,7 @@ module ConsoleAgent
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue Interrupt
+      # Ctrl-C during Readline input — exit cleanly
       $stdout.puts
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"

@@ -46,31 +46,6 @@ module ConsoleAgent
       nil
     end
 
-    def ai_export(n = nil)
-      storage = ConsoleAgent.storage
-      keys = storage.list('memories/*.md').sort
-
-      if keys.empty?
-        $stdout.puts "\e[2mNo memories to export.\e[0m"
-        return nil
-      end
-
-      exported = n ? keys.last(n) : keys
-      root = storage.respond_to?(:root_path) ? storage.root_path : '.console_agent'
-
-      $stdout.puts "\e[36m# Memory files to commit to your codebase:\e[0m"
-      exported.each do |key|
-        full_path = File.join(root, key)
-        $stdout.puts "\e[33m  #{full_path}\e[0m"
-        content = storage.read(key)
-        content.each_line { |line| $stdout.puts "\e[2m    #{line}\e[0m" } if content
-        $stdout.puts
-      end
-      $stdout.puts "\e[2m(#{exported.length} memory files)\e[0m"
-      $stdout.puts "\e[2mCommit the .console_agent/memories/ directory to share across environments.\e[0m"
-      nil
-    end
-
     def ai(query = nil)
       if query.nil?
         $stderr.puts "\e[33mUsage: ai \"your question here\"\e[0m"
@@ -79,7 +54,6 @@ module ConsoleAgent
         $stderr.puts "\e[33m  ai? \"query\" - explain only, no execution\e[0m"
         $stderr.puts "\e[33m  ai_status   - show current configuration\e[0m"
         $stderr.puts "\e[33m  ai_memories - show recent memories (ai_memories(n) for last n)\e[0m"
-        $stderr.puts "\e[33m  ai_export   - show memory files to commit to codebase\e[0m"
         return nil
       end
 

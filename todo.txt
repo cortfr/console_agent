@@ -1,0 +1,11 @@
+* automatically read CLAUDE.md and agents?
+* have ability to schedule delayed jobs or whatever background job processor is being used
+   * those jobs should be manageable, so you can see a list of active "agents" and pause/stop/interact with them
+* I want to be able to create skills.  maybe they are stored in a table?
+* Look into "Skill Registries" ?
+* need to support claude code and codex oauth to avoid api usage.
+X It should have include output from previously run commands... see this:
+X fix interactions in ai!
+  * ctrl-a and ctrl-k don't seem to work they put characters in the line.
+  * hitting esc while it's running aborts the whole session, I just want to abort what's it's currently doing
+  * hitting the up key puts ^[[A in
