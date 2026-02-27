@@ -1,0 +1,5 @@
+.claude/
+*.gem
+Gemfile.lock
+pkg/
+tmp/
