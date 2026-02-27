@@ -35,6 +35,15 @@ module ConsoleAgent
         File.exist?(full_path(key))
       end
 
+      def delete(key)
+        path = full_path(key)
+        return false unless File.exist?(path)
+        File.delete(path)
+        true
+      rescue Errno::EACCES, Errno::EROFS, IOError => e
+        raise StorageError, "Cannot delete #{key}: #{e.message}"
+      end
+
       private
 
       def full_path(key)

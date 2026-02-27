@@ -11,31 +11,63 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
   after { FileUtils.rm_rf(tmpdir) }
 
   describe '#save_memory' do
-    it 'saves a memory to storage' do
+    it 'saves a memory as a markdown file' do
       result = tools.save_memory(name: 'Test fact', description: 'A useful fact', tags: ['test'])
       expect(result).to include('Memory saved')
 
-      content = storage.read('memories.yml')
-      data = YAML.safe_load(content)
-      expect(data['memories'].length).to eq(1)
-      expect(data['memories'][0]['name']).to eq('Test fact')
-      expect(data['memories'][0]['description']).to eq('A useful fact')
-      expect(data['memories'][0]['tags']).to eq(['test'])
-      expect(data['memories'][0]['id']).to start_with('mem_')
+      content = storage.read('memories/test-fact.md')
+      expect(content).to include('name: Test fact')
+      expect(content).to include('A useful fact')
+      expect(content).to include('test')
     end
 
-    it 'appends to existing memories' do
+    it 'creates separate files for different memories' do
       tools.save_memory(name: 'First', description: 'First fact')
       tools.save_memory(name: 'Second', description: 'Second fact')
 
-      content = storage.read('memories.yml')
-      data = YAML.safe_load(content)
-      expect(data['memories'].length).to eq(2)
+      keys = storage.list('memories/*.md')
+      expect(keys.length).to eq(2)
+    end
+
+    it 'updates existing memory with the same name' do
+      tools.save_memory(name: 'Sharding', description: 'Original description', tags: ['database'])
+      result = tools.save_memory(name: 'Sharding', description: 'Updated description', tags: ['database', 'updated'])
+
+      expect(result).to include('Memory updated')
+      expect(result).to include('Sharding')
+
+      keys = storage.list('memories/*.md')
+      expect(keys.length).to eq(1)
+
+      content = storage.read('memories/sharding.md')
+      expect(content).to include('Updated description')
+      expect(content).to include('updated_at')
+    end
+
+    it 'updates case-insensitively by name' do
+      tools.save_memory(name: 'Sharding Architecture', description: 'Original')
+      tools.save_memory(name: 'sharding architecture', description: 'Updated')
+
+      keys = storage.list('memories/*.md')
+      expect(keys.length).to eq(1)
+
+      content = storage.read('memories/sharding-architecture.md')
+      expect(content).to include('Updated')
+    end
+
+    it 'keeps original tags when updating with empty tags' do
+      tools.save_memory(name: 'Sharding', description: 'Original', tags: ['database'])
+      tools.save_memory(name: 'Sharding', description: 'Updated')
+
+      content = storage.read('memories/sharding.md')
+      expect(content).to include('database')
     end
 
     it 'returns fallback text on storage error' do
       failing_storage = instance_double(ConsoleAgent::Storage::FileStorage)
       allow(failing_storage).to receive(:read).and_return(nil)
+      allow(failing_storage).to receive(:exists?).and_return(false)
+      allow(failing_storage).to receive(:list).and_return([])
       allow(failing_storage).to receive(:write).and_raise(
         ConsoleAgent::Storage::StorageError, 'Read-only filesystem'
       )
@@ -45,6 +77,25 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
       expect(result).to include('FAILED to save')
       expect(result).to include('Test')
       expect(result).to include('Desc')
+    end
+  end
+
+  describe '#delete_memory' do
+    it 'deletes a memory by name' do
+      tools.save_memory(name: 'First', description: 'First fact')
+      tools.save_memory(name: 'Second', description: 'Second fact')
+
+      result = tools.delete_memory(name: 'First')
+      expect(result).to include('Memory deleted')
+      expect(result).to include('First')
+
+      keys = storage.list('memories/*.md')
+      expect(keys.length).to eq(1)
+    end
+
+    it 'returns error for unknown name' do
+      result = tools.delete_memory(name: 'nonexistent')
+      expect(result).to include('No memory found')
     end
   end
 
@@ -94,8 +145,8 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
 
       summaries = tools.memory_summaries
       expect(summaries.length).to eq(2)
-      expect(summaries[0]).to eq('- Sharding [database]')
-      expect(summaries[1]).to eq('- Auth')
+      expect(summaries).to include('- Sharding [database]')
+      expect(summaries).to include('- Auth')
     end
   end
 end

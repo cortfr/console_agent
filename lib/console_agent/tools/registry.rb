@@ -6,7 +6,7 @@ module ConsoleAgent
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory].freeze
 
       def initialize
         @definitions = []
@@ -204,6 +204,19 @@ module ConsoleAgent
           handler: ->(args) {
             memory.save_memory(name: args['name'], description: args['description'], tags: args['tags'] || [])
           }
+        )
+
+        register(
+          name: 'delete_memory',
+          description: 'Delete a memory by name.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The memory name to delete (e.g. "Sharding architecture")' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { memory.delete_memory(name: args['name']) }
         )
 
         register(

@@ -18,6 +18,10 @@ module ConsoleAgent
       def exists?(key)
         raise NotImplementedError
       end
+
+      def delete(key)
+        raise NotImplementedError
+      end
     end
   end
 end

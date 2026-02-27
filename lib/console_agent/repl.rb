@@ -76,10 +76,26 @@ module ConsoleAgent
             exec_result = @executor.confirm_and_execute(code)
           end
 
-          if exec_result
-            result_str = exec_result.inspect
-            result_str = result_str[0..500] + '...' if result_str.length > 500
-            @history << { role: :user, content: "Execution result: #{result_str}" }
+          if @executor.last_cancelled?
+            @history << { role: :user, content: "User declined to execute the code." }
+          else
+            output_parts = []
+
+            # Capture printed output (puts, print, etc.)
+            if @executor.last_output && !@executor.last_output.strip.empty?
+              output_parts << "Output:\n#{@executor.last_output.strip}"
+            end
+
+            # Capture return value
+            if exec_result
+              output_parts << "Return value: #{exec_result.inspect}"
+            end
+
+            unless output_parts.empty?
+              result_str = output_parts.join("\n\n")
+              result_str = result_str[0..1000] + '...' if result_str.length > 1000
+              @history << { role: :user, content: "Code was executed. #{result_str}" }
+            end
           end
         end
       end
@@ -213,6 +229,8 @@ module ConsoleAgent
         args['directory'] ? "(\"#{args['directory']}\")" : ''
       when 'save_memory'
         "(\"#{args['name']}\")"
+      when 'delete_memory'
+        "(\"#{args['name']}\")"
       when 'recall_memories'
         args['query'] ? "(\"#{args['query']}\")" : ''
       when 'load_skill'
@@ -265,7 +283,9 @@ module ConsoleAgent
           truncate(result, 80)
         end
       when 'save_memory'
-        result.start_with?('Memory saved') ? result : truncate(result, 80)
+        (result.start_with?('Memory saved') || result.start_with?('Memory updated')) ? result : truncate(result, 80)
+      when 'delete_memory'
+        result.start_with?('Memory deleted') ? result : truncate(result, 80)
       when 'recall_memories'
         chunks = result.split("\n\n")
         chunks.length > 1 ? "#{chunks.length} memories found" : truncate(result, 80)

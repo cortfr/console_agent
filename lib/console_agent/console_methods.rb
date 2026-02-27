@@ -6,15 +6,22 @@ module ConsoleAgent
 
     def ai_memories(n = nil)
       require 'yaml'
-      content = ConsoleAgent.storage.read('memories.yml')
+      require 'console_agent/tools/memory_tools'
+      storage = ConsoleAgent.storage
+      keys = storage.list('memories/*.md').sort
 
-      if content.nil? || content.strip.empty?
+      if keys.empty?
         $stdout.puts "\e[2mNo memories stored yet.\e[0m"
         return nil
       end
 
-      data = YAML.safe_load(content, permitted_classes: [Time, Date]) || {}
-      memories = data['memories'] || []
+      memories = keys.filter_map do |key|
+        content = storage.read(key)
+        next if content.nil? || content.strip.empty?
+        next unless content =~ /\A---\s*\n(.*?\n)---\s*\n(.*)/m
+        fm = YAML.safe_load($1, permitted_classes: [Time, Date]) || {}
+        fm.merge('description' => $2.strip, 'file' => key)
+      end
 
       if memories.empty?
         $stdout.puts "\e[2mNo memories stored yet.\e[0m"
@@ -33,10 +40,9 @@ module ConsoleAgent
         $stdout.puts
       end
 
-      storage = ConsoleAgent.storage
-      path = storage.respond_to?(:root_path) ? File.join(storage.root_path, 'memories.yml') : 'memories.yml'
-      $stdout.puts "\e[2mStored in: #{path}\e[0m"
-      $stdout.puts "\e[2mUse ai_memories(n) to show last n. Use ai_export to get YAML for your codebase.\e[0m"
+      path = storage.respond_to?(:root_path) ? File.join(storage.root_path, 'memories') : 'memories/'
+      $stdout.puts "\e[2mStored in: #{path}/\e[0m"
+      $stdout.puts "\e[2mUse ai_memories(n) to show last n.\e[0m"
       nil
     end
 
@@ -58,28 +64,27 @@ module ConsoleAgent
     end
 
     def ai_export(n = nil)
-      require 'yaml'
-      content = ConsoleAgent.storage.read('memories.yml')
+      storage = ConsoleAgent.storage
+      keys = storage.list('memories/*.md').sort
 
-      if content.nil? || content.strip.empty?
+      if keys.empty?
         $stdout.puts "\e[2mNo memories to export.\e[0m"
         return nil
       end
 
-      data = YAML.safe_load(content, permitted_classes: [Time, Date]) || {}
-      memories = data['memories'] || []
+      exported = n ? keys.last(n) : keys
+      root = storage.respond_to?(:root_path) ? storage.root_path : '.console_agent'
 
-      if memories.empty?
-        $stdout.puts "\e[2mNo memories to export.\e[0m"
-        return nil
+      $stdout.puts "\e[36m# Memory files to commit to your codebase:\e[0m"
+      exported.each do |key|
+        full_path = File.join(root, key)
+        $stdout.puts "\e[33m  #{full_path}\e[0m"
+        content = storage.read(key)
+        content.each_line { |line| $stdout.puts "\e[2m    #{line}\e[0m" } if content
+        $stdout.puts
       end
-
-      exported = n ? memories.last(n) : memories
-      yaml = YAML.dump('memories' => exported)
-
-      $stdout.puts "\e[36m# Add to .console_agent/memories.yml in your codebase and commit:\e[0m"
-      $stdout.puts yaml
-      $stdout.puts "\e[2m(#{exported.length} memories)\e[0m"
+      $stdout.puts "\e[2m(#{exported.length} memory files)\e[0m"
+      $stdout.puts "\e[2mCommit the .console_agent/memories/ directory to share across environments.\e[0m"
       nil
     end
 

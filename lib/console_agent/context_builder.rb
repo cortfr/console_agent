@@ -51,7 +51,9 @@ module ConsoleAgent
         record to target, or what value to use.
 
         You have memory and skill tools:
-        - save_memory: persist facts you learn about this codebase for future sessions
+        - save_memory: persist facts you learn about this codebase for future sessions.
+          If a memory with the same name already exists, it will be updated in place.
+        - delete_memory: remove a memory by name
         - recall_memories: search your saved memories for details
         - load_skill: load detailed instructions for specialized tasks
 

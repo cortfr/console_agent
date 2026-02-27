@@ -1,4 +1,43 @@
+require 'stringio'
+
 module ConsoleAgent
+  # Writes to two IO streams simultaneously
+  class TeeIO
+    def initialize(primary, secondary)
+      @primary = primary
+      @secondary = secondary
+    end
+
+    def write(str)
+      @primary.write(str)
+      @secondary.write(str)
+    end
+
+    def puts(*args)
+      @primary.puts(*args)
+      # Capture what puts would output
+      args.each { |a| @secondary.write("#{a}\n") }
+      @secondary.write("\n") if args.empty?
+    end
+
+    def print(*args)
+      @primary.print(*args)
+      args.each { |a| @secondary.write(a.to_s) }
+    end
+
+    def flush
+      @primary.flush if @primary.respond_to?(:flush)
+    end
+
+    def respond_to_missing?(method, include_private = false)
+      @primary.respond_to?(method, include_private) || super
+    end
+
+    def method_missing(method, *args, &block)
+      @primary.send(method, *args, &block)
+    end
+  end
+
   class Executor
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
@@ -33,21 +72,43 @@ module ConsoleAgent
     def execute(code)
       return nil if code.nil? || code.strip.empty?
 
+      captured_output = StringIO.new
+      old_stdout = $stdout
+      # Tee output: capture it and also print to the real stdout
+      $stdout = TeeIO.new(old_stdout, captured_output)
+
       result = binding_context.eval(code, "(console_agent)", 1)
+
+      $stdout = old_stdout
       $stdout.puts colorize("=> #{result.inspect}", :green)
+
+      @last_output = captured_output.string
       result
     rescue SyntaxError => e
+      $stdout = old_stdout if old_stdout
       $stderr.puts colorize("SyntaxError: #{e.message}", :red)
+      @last_output = nil
       nil
     rescue => e
+      $stdout = old_stdout if old_stdout
       $stderr.puts colorize("Error: #{e.class}: #{e.message}", :red)
       e.backtrace.first(3).each { |line| $stderr.puts colorize("  #{line}", :red) }
+      @last_output = captured_output&.string
       nil
+    end
+
+    def last_output
+      @last_output
+    end
+
+    def last_cancelled?
+      @last_cancelled
     end
 
     def confirm_and_execute(code)
       return nil if code.nil? || code.strip.empty?
 
+      @last_cancelled = false
       $stdout.print colorize("Execute? [y/N/edit] ", :yellow)
       answer = $stdin.gets.to_s.strip.downcase
 
@@ -71,6 +132,7 @@ module ConsoleAgent
         end
       else
         $stdout.puts colorize("Cancelled.", :yellow)
+        @last_cancelled = true
         nil
       end
     end

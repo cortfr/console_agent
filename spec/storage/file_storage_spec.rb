@@ -57,6 +57,18 @@ RSpec.describe ConsoleAgent::Storage::FileStorage do
     end
   end
 
+  describe '#delete' do
+    it 'deletes an existing file' do
+      storage.write('test.yml', 'data')
+      expect(storage.delete('test.yml')).to be true
+      expect(storage.exists?('test.yml')).to be false
+    end
+
+    it 'returns false for non-existent file' do
+      expect(storage.delete('missing.yml')).to be false
+    end
+  end
+
   describe '#exists?' do
     it 'returns false for missing key' do
       expect(storage.exists?('nope.yml')).to be false
