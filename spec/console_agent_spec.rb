@@ -33,7 +33,7 @@ RSpec.describe ConsoleAgent do
 
   describe 'VERSION' do
     it 'is defined' do
-      expect(ConsoleAgent::VERSION).to eq('0.1.0')
+      expect(ConsoleAgent::VERSION).to eq('0.2.0')
     end
   end
 end
