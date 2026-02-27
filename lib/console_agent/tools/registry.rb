@@ -145,6 +145,27 @@ module ConsoleAgent
           },
           handler: ->(args) { code.search_code(args['query'], args['directory']) }
         )
+
+        register(
+          name: 'ask_user',
+          description: 'Ask the console user a clarifying question. Use this when you need specific information to write accurate code (e.g. which user they are, which record to target, what value to use). Do NOT generate placeholder values like YOUR_USER_ID — ask instead.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'question' => { 'type' => 'string', 'description' => 'The question to ask the user' }
+            },
+            'required' => ['question']
+          },
+          handler: ->(args) { ask_user(args['question']) }
+        )
+      end
+
+      def ask_user(question)
+        $stdout.puts "\e[36m  ? #{question}\e[0m"
+        $stdout.print "\e[36m  > \e[0m"
+        answer = $stdin.gets
+        return '(no answer provided)' if answer.nil?
+        answer.strip.empty? ? '(no answer provided)' : answer.strip
       end
 
       def register(name:, description:, parameters:, handler:)

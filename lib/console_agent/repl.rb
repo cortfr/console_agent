@@ -153,14 +153,18 @@ module ConsoleAgent
 
         # Execute each tool and show progress
         result.tool_calls.each do |tc|
-          args_display = format_tool_args(tc[:name], tc[:arguments])
-          $stdout.puts "\e[33m  -> #{tc[:name]}#{args_display}\e[0m"
+          # ask_user handles its own display (prompt + input)
+          if tc[:name] == 'ask_user'
+            tool_result = tools.execute(tc[:name], tc[:arguments])
+          else
+            args_display = format_tool_args(tc[:name], tc[:arguments])
+            $stdout.puts "\e[33m  -> #{tc[:name]}#{args_display}\e[0m"
 
-          tool_result = tools.execute(tc[:name], tc[:arguments])
+            tool_result = tools.execute(tc[:name], tc[:arguments])
 
-          # Show a compact preview of the result
-          preview = compact_tool_result(tc[:name], tool_result)
-          $stdout.puts "\e[2m     #{preview}\e[0m"
+            preview = compact_tool_result(tc[:name], tool_result)
+            $stdout.puts "\e[2m     #{preview}\e[0m"
+          end
 
           if ConsoleAgent.configuration.debug
             $stderr.puts "\e[35m[debug tool result] #{tool_result}\e[0m"
