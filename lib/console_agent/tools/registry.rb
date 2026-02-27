@@ -5,10 +5,19 @@ module ConsoleAgent
     class Registry
       attr_reader :definitions
 
+      # Tools that should never be cached (side effects or user interaction)
+      NO_CACHE = %w[ask_user save_memory].freeze
+
       def initialize
         @definitions = []
         @handlers = {}
+        @cache = {}
+        @last_cached = false
         register_all
+      end
+
+      def last_cached?
+        @last_cached
       end
 
       def execute(tool_name, arguments = {})
@@ -27,7 +36,18 @@ module ConsoleAgent
                  arguments || {}
                end
 
-        handler.call(args)
+        unless NO_CACHE.include?(tool_name)
+          cache_key = [tool_name, args].hash
+          if @cache.key?(cache_key)
+            @last_cached = true
+            return @cache[cache_key]
+          end
+        end
+
+        @last_cached = false
+        result = handler.call(args)
+        @cache[[tool_name, args].hash] = result unless NO_CACHE.include?(tool_name)
+        result
       rescue => e
         "Error executing #{tool_name}: #{e.message}"
       end

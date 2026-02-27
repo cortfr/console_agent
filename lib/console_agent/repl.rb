@@ -165,7 +165,8 @@ module ConsoleAgent
             tool_result = tools.execute(tc[:name], tc[:arguments])
 
             preview = compact_tool_result(tc[:name], tool_result)
-            $stdout.puts "\e[2m     #{preview}\e[0m"
+            cached_tag = tools.last_cached? ? " (cached)" : ""
+            $stdout.puts "\e[2m     #{preview}#{cached_tag}\e[0m"
           end
 
           if ConsoleAgent.configuration.debug
