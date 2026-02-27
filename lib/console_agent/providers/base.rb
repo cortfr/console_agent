@@ -26,6 +26,29 @@ module ConsoleAgent
         end
       end
 
+      def debug_request(url, body)
+        return unless config.debug
+
+        $stderr.puts "\e[33m--- ConsoleAgent DEBUG: REQUEST ---\e[0m"
+        $stderr.puts "\e[33mURL: #{url}\e[0m"
+        parsed = body.is_a?(String) ? JSON.parse(body) : body
+        $stderr.puts "\e[33m#{JSON.pretty_generate(parsed)}\e[0m"
+        $stderr.puts "\e[33m--- END REQUEST ---\e[0m"
+      rescue => e
+        $stderr.puts "\e[33m[debug] #{body}\e[0m"
+      end
+
+      def debug_response(body)
+        return unless config.debug
+
+        $stderr.puts "\e[36m--- ConsoleAgent DEBUG: RESPONSE ---\e[0m"
+        parsed = body.is_a?(String) ? JSON.parse(body) : body
+        $stderr.puts "\e[36m#{JSON.pretty_generate(parsed)}\e[0m"
+        $stderr.puts "\e[36m--- END RESPONSE ---\e[0m"
+      rescue => e
+        $stderr.puts "\e[36m[debug] #{body}\e[0m"
+      end
+
       def parse_response(response)
         unless response.success?
           body = begin

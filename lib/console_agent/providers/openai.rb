@@ -19,7 +19,11 @@ module ConsoleAgent
           messages: formatted
         }
 
-        data = parse_response(conn.post('/v1/chat/completions', JSON.generate(body)))
+        json_body = JSON.generate(body)
+        debug_request("#{API_URL}/v1/chat/completions", body)
+        response = conn.post('/v1/chat/completions', json_body)
+        debug_response(response.body)
+        data = parse_response(response)
         extract_text(data)
       end
 

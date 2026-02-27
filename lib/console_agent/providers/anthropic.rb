@@ -17,7 +17,11 @@ module ConsoleAgent
         }
         body[:system] = system_prompt if system_prompt
 
-        data = parse_response(conn.post('/v1/messages', JSON.generate(body)))
+        json_body = JSON.generate(body)
+        debug_request("#{API_URL}/v1/messages", body)
+        response = conn.post('/v1/messages', json_body)
+        debug_response(response.body)
+        data = parse_response(response)
         extract_text(data)
       end
 

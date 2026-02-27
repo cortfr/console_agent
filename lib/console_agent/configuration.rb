@@ -4,7 +4,7 @@ module ConsoleAgent
 
     attr_accessor :provider, :api_key, :model, :max_tokens,
                   :auto_execute, :context_mode, :temperature,
-                  :timeout
+                  :timeout, :debug
 
     def initialize
       @provider     = :anthropic
@@ -15,6 +15,7 @@ module ConsoleAgent
       @context_mode = :full
       @temperature  = 0.2
       @timeout      = 30
+      @debug        = false
     end
 
     def resolved_api_key
