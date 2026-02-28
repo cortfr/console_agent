@@ -82,7 +82,7 @@ module ConsoleAgent
       @interactive_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       auto = ConsoleAgent.configuration.auto_execute
       $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
-      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab to toggle)\e[0m"
+      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage for token stats\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -111,6 +111,18 @@ module ConsoleAgent
           ConsoleAgent.configuration.auto_execute = !ConsoleAgent.configuration.auto_execute
           mode = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
           $stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
+          next
+        end
+
+        if input == '/usage'
+          display_session_summary
+          next
+        end
+
+        if input == '/debug'
+          ConsoleAgent.configuration.debug = !ConsoleAgent.configuration.debug
+          mode = ConsoleAgent.configuration.debug ? 'ON' : 'OFF'
+          $stdout.puts "\e[36m  Debug: #{mode}\e[0m"
           next
         end
 
