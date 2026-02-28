@@ -12,6 +12,7 @@ module ConsoleAgent
           output_tokens: attrs[:output_tokens] || 0,
           user_name:     current_user_name,
           mode:          attrs[:mode].to_s,
+          name:          attrs[:name],
           code_executed: attrs[:code_executed],
           code_output:   attrs[:code_output],
           code_result:   attrs[:code_result],
@@ -45,6 +46,7 @@ module ConsoleAgent
         updates[:console_output] = attrs[:console_output] if attrs.key?(:console_output)
         updates[:executed]      = attrs[:executed]       if attrs.key?(:executed)
         updates[:duration_ms]   = attrs[:duration_ms]    if attrs.key?(:duration_ms)
+        updates[:name]          = attrs[:name]           if attrs.key?(:name)
 
         session_class.where(id: id).update_all(updates) unless updates.empty?
       rescue => e

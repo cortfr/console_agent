@@ -6,6 +6,12 @@
       <label>Query</label>
       <span><%= @session.query %></span>
     </div>
+    <% if @session.name.present? %>
+      <div class="meta-item">
+        <label>Name</label>
+        <span><%= @session.name %></span>
+      </div>
+    <% end %>
     <div class="meta-item">
       <label>Mode</label>
       <span class="badge badge-<%= @session.mode %>"><%= @session.mode %></span>

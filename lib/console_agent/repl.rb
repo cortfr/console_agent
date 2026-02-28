@@ -91,30 +91,66 @@ module ConsoleAgent
     end
 
     def interactive
+      init_interactive_state
+      interactive_loop
+    end
+
+    def resume(session)
+      init_interactive_state
+
+      # Restore state from the previous session
+      @history = JSON.parse(session.conversation, symbolize_names: true)
+      @interactive_session_id = session.id
+      @interactive_query = session.query
+      @interactive_session_name = session.name
+      @total_input_tokens = session.input_tokens || 0
+      @total_output_tokens = session.output_tokens || 0
+
+      # Replay stored console output so the user sees previous context
+      if session.console_output && !session.console_output.strip.empty?
+        $stdout.puts "\e[2m--- Replaying previous session output ---\e[0m"
+        $stdout.puts session.console_output
+        $stdout.puts "\e[2m--- End of previous output ---\e[0m"
+        $stdout.puts
+      end
+
+      # Copy replayed output into the capture buffer so it's preserved on save
+      @interactive_console_capture.write(session.console_output.to_s)
+
+      interactive_loop
+    end
+
+    private
+
+    def init_interactive_state
       @interactive_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       @interactive_console_capture = StringIO.new
       @interactive_old_stdout = $stdout
       $stdout = TeeIO.new(@interactive_old_stdout, @interactive_console_capture)
       @executor.on_prompt = -> { log_interactive_turn }
 
-      auto = ConsoleAgent.configuration.auto_execute
-      $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
-      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage for token stats\e[0m"
-
-      # Bind Shift-Tab to insert /auto command and submit
-      if Readline.respond_to?(:parse_and_bind)
-        Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
-      end
-
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
       @interactive_query = nil
       @interactive_session_id = nil
+      @interactive_session_name = nil
       @last_interactive_code = nil
       @last_interactive_output = nil
       @last_interactive_result = nil
       @last_interactive_executed = false
+    end
+
+    def interactive_loop
+      auto = ConsoleAgent.configuration.auto_execute
+      name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
+      $stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
+      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage | /name <label>\e[0m"
+
+      # Bind Shift-Tab to insert /auto command and submit
+      if Readline.respond_to?(:parse_and_bind)
+        Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
+      end
 
       loop do
         input = Readline.readline("\e[33mai> \e[0m", false)
@@ -140,6 +176,25 @@ module ConsoleAgent
           ConsoleAgent.configuration.debug = !ConsoleAgent.configuration.debug
           mode = ConsoleAgent.configuration.debug ? 'ON' : 'OFF'
           $stdout.puts "\e[36m  Debug: #{mode}\e[0m"
+          next
+        end
+
+        if input.start_with?('/name')
+          name = input.sub('/name', '').strip
+          if name.empty?
+            if @interactive_session_name
+              $stdout.puts "\e[36m  Session name: #{@interactive_session_name}\e[0m"
+            else
+              $stdout.puts "\e[33m  Usage: /name <label>  (e.g. /name salesforce_user_123)\e[0m"
+            end
+          else
+            @interactive_session_name = name
+            if @interactive_session_id
+              require 'console_agent/session_logger'
+              SessionLogger.update(@interactive_session_id, name: name)
+            end
+            $stdout.puts "\e[36m  Session named: #{name}\e[0m"
+          end
           next
         end
 
@@ -219,23 +274,19 @@ module ConsoleAgent
       $stdout = @interactive_old_stdout
       @executor.on_prompt = nil
       finish_interactive_session
-      display_session_summary
-      $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
+      display_exit_info
     rescue Interrupt
       # Ctrl-C during Readline input — exit cleanly
       $stdout = @interactive_old_stdout if @interactive_old_stdout
       @executor.on_prompt = nil
       $stdout.puts
       finish_interactive_session
-      display_session_summary
-      $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
+      display_exit_info
     rescue => e
       $stdout = @interactive_old_stdout if @interactive_old_stdout
       @executor.on_prompt = nil
       $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
     end
-
-    private
 
     def provider
       @provider ||= Providers.build
@@ -480,7 +531,8 @@ module ConsoleAgent
         @interactive_session_id = SessionLogger.log(
           session_attrs.merge(
             query: @interactive_query || '(interactive session)',
-            mode:  'interactive'
+            mode:  'interactive',
+            name:  @interactive_session_name
           )
         )
       end
@@ -536,6 +588,20 @@ module ConsoleAgent
       return if @total_input_tokens == 0 && @total_output_tokens == 0
 
       $stdout.puts "\e[2m[session totals — in: #{@total_input_tokens} | out: #{@total_output_tokens} | total: #{@total_input_tokens + @total_output_tokens}]\e[0m"
+    end
+
+    def display_exit_info
+      display_session_summary
+      if @interactive_session_id
+        $stdout.puts "\e[36mSession ##{@interactive_session_id} saved.\e[0m"
+        if @interactive_session_name
+          $stdout.puts "\e[2m  Resume with: ai_resume \"#{@interactive_session_name}\"\e[0m"
+        else
+          $stdout.puts "\e[2m  Name it:   ai_name #{@interactive_session_id}, \"descriptive_name\"\e[0m"
+          $stdout.puts "\e[2m  Resume it: ai_resume #{@interactive_session_id}\e[0m"
+        end
+      end
+      $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     end
   end
 end

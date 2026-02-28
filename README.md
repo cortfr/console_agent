@@ -132,6 +132,66 @@ ai> exit
 
 Toggle `/auto` to skip confirmation prompts. `/debug` shows raw API traffic. `/usage` shows token stats.
 
+### Sessions
+
+Sessions are saved automatically when session logging is enabled. You can name, list, and resume them.
+
+```
+ai> /name sf_user_123_calendar
+  Session named: sf_user_123_calendar
+ai> exit
+Session #42 saved.
+  Resume with: ai_resume "sf_user_123_calendar"
+Left ConsoleAgent interactive mode.
+```
+
+List recent sessions:
+
+```
+irb> ai_sessions
+[Sessions — showing 3]
+
+  #42 sf_user_123_calendar find user 123 with calendar issues
+     [interactive] 5m ago 2340 tokens
+
+  #41 count all active users
+     [one_shot] 1h ago 850 tokens
+
+  #40 debug_payments explain payment flow
+     [interactive] 2h ago 4100 tokens
+
+Use ai_resume(id_or_name) to resume a session.
+```
+
+Resume a session by name or ID — previous output is replayed, then you continue where you left off:
+
+```
+irb> ai_resume "sf_user_123_calendar"
+--- Replaying previous session output ---
+ai> find user 123 with calendar issues
+  ...previous output...
+--- End of previous output ---
+
+ConsoleAgent interactive mode (sf_user_123_calendar). Type 'exit' to leave.
+ai> now check their calendar sync status
+  ...
+```
+
+Name or rename a session after the fact:
+
+```
+irb> ai_name 41, "active_user_count"
+Session #41 named: active_user_count
+```
+
+Filter sessions by search term:
+
+```
+irb> ai_sessions 20, search: "salesforce"
+```
+
+If you have an existing `console_agent_sessions` table, run `ConsoleAgent.migrate!` to add the `name` column.
+
 ## Configuration
 
 All settings live in `config/initializers/console_agent.rb` and can be changed at runtime:

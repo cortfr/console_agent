@@ -118,6 +118,22 @@ RSpec.describe ConsoleAgent::SessionLogger do
       result = described_class.log(attrs)
       expect(result).to eq(42)
     end
+
+    it 'passes name when provided' do
+      described_class.log(attrs.merge(name: 'my_session'))
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(name: 'my_session')
+      )
+    end
+
+    it 'passes nil name when not provided' do
+      described_class.log(attrs)
+
+      expect(mock_session).to have_received(:create!).with(
+        hash_including(name: nil)
+      )
+    end
   end
 
   describe '.update' do
@@ -166,6 +182,14 @@ RSpec.describe ConsoleAgent::SessionLogger do
       ConsoleAgent.configure { |c| c.session_logging = false }
       described_class.update(42, input_tokens: 100)
       expect(mock_session).not_to have_received(:where)
+    end
+
+    it 'updates name when provided' do
+      described_class.update(42, name: 'renamed_session')
+
+      expect(mock_relation).to have_received(:update_all).with(
+        hash_including(name: 'renamed_session')
+      )
     end
 
     it 'rescues errors and logs a warning' do

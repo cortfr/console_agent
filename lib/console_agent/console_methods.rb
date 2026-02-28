@@ -46,14 +46,94 @@ module ConsoleAgent
       nil
     end
 
+    def ai_sessions(n = 10, search: nil)
+      require 'console_agent/session_logger'
+      session_class = Object.const_get('ConsoleAgent::Session')
+
+      scope = session_class.recent
+      scope = scope.search(search) if search
+      sessions = scope.limit(n)
+
+      if sessions.empty?
+        $stdout.puts "\e[2mNo sessions found.\e[0m"
+        return nil
+      end
+
+      $stdout.puts "\e[36m[Sessions — showing #{sessions.length}#{search ? " matching \"#{search}\"" : ''}]\e[0m"
+      $stdout.puts
+
+      sessions.each do |s|
+        id_str = "\e[2m##{s.id}\e[0m"
+        name_str = s.name ? "\e[33m#{s.name}\e[0m " : ""
+        query_str = s.name ? "\e[2m#{truncate_str(s.query, 50)}\e[0m" : truncate_str(s.query, 50)
+        mode_str = "\e[2m[#{s.mode}]\e[0m"
+        time_str = "\e[2m#{time_ago(s.created_at)}\e[0m"
+        tokens = (s.input_tokens || 0) + (s.output_tokens || 0)
+        token_str = tokens > 0 ? "\e[2m#{tokens} tokens\e[0m" : ""
+
+        $stdout.puts "  #{id_str} #{name_str}#{query_str}"
+        $stdout.puts "     #{mode_str} #{time_str} #{token_str}"
+        $stdout.puts
+      end
+
+      $stdout.puts "\e[2mUse ai_resume(id_or_name) to resume a session.\e[0m"
+      $stdout.puts "\e[2mUse ai_sessions(n, search: \"term\") to filter.\e[0m"
+      nil
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent error: #{e.message}\e[0m"
+      nil
+    end
+
+    def ai_resume(identifier)
+      __ensure_console_agent_user
+
+      require 'console_agent/context_builder'
+      require 'console_agent/providers/base'
+      require 'console_agent/executor'
+      require 'console_agent/repl'
+      require 'console_agent/session_logger'
+
+      session = __find_session(identifier)
+      unless session
+        $stderr.puts "\e[31mSession not found: #{identifier}\e[0m"
+        return nil
+      end
+
+      repl = Repl.new(__console_agent_binding)
+      repl.resume(session)
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent error: #{e.message}\e[0m"
+      nil
+    end
+
+    def ai_name(identifier, new_name)
+      require 'console_agent/session_logger'
+
+      session = __find_session(identifier)
+      unless session
+        $stderr.puts "\e[31mSession not found: #{identifier}\e[0m"
+        return nil
+      end
+
+      ConsoleAgent::SessionLogger.update(session.id, name: new_name)
+      $stdout.puts "\e[36mSession ##{session.id} named: #{new_name}\e[0m"
+      nil
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent error: #{e.message}\e[0m"
+      nil
+    end
+
     def ai(query = nil)
       if query.nil?
         $stderr.puts "\e[33mUsage: ai \"your question here\"\e[0m"
-        $stderr.puts "\e[33m  ai  \"query\" - ask + confirm execution\e[0m"
-        $stderr.puts "\e[33m  ai! \"query\" - enter interactive mode (or ai! with no args)\e[0m"
-        $stderr.puts "\e[33m  ai? \"query\" - explain only, no execution\e[0m"
-        $stderr.puts "\e[33m  ai_status   - show current configuration\e[0m"
-        $stderr.puts "\e[33m  ai_memories - show recent memories (ai_memories(n) for last n)\e[0m"
+        $stderr.puts "\e[33m  ai  \"query\"  - ask + confirm execution\e[0m"
+        $stderr.puts "\e[33m  ai! \"query\"  - enter interactive mode (or ai! with no args)\e[0m"
+        $stderr.puts "\e[33m  ai? \"query\"  - explain only, no execution\e[0m"
+        $stderr.puts "\e[33m  ai_sessions  - list recent sessions\e[0m"
+        $stderr.puts "\e[33m  ai_resume    - resume a session by name or id\e[0m"
+        $stderr.puts "\e[33m  ai_name      - name a session: ai_name 42, \"my_label\"\e[0m"
+        $stderr.puts "\e[33m  ai_status    - show current configuration\e[0m"
+        $stderr.puts "\e[33m  ai_memories  - show recent memories (ai_memories(n) for last n)\e[0m"
         return nil
       end
 
@@ -112,6 +192,32 @@ module ConsoleAgent
     end
 
     private
+
+    def __find_session(identifier)
+      session_class = Object.const_get('ConsoleAgent::Session')
+      if identifier.is_a?(Integer)
+        session_class.find_by(id: identifier)
+      else
+        session_class.where(name: identifier.to_s).recent.first ||
+          session_class.find_by(id: identifier.to_i)
+      end
+    end
+
+    def truncate_str(str, max)
+      return '' if str.nil?
+      str.length > max ? str[0...max] + '...' : str
+    end
+
+    def time_ago(time)
+      return '' unless time
+      seconds = Time.now - time
+      case seconds
+      when 0...60       then "just now"
+      when 60...3600    then "#{(seconds / 60).to_i}m ago"
+      when 3600...86400 then "#{(seconds / 3600).to_i}h ago"
+      else                   "#{(seconds / 86400).to_i}d ago"
+      end
+    end
 
     def __ensure_console_agent_user
       return if ConsoleAgent.current_user

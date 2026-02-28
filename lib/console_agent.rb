@@ -100,17 +100,45 @@ module ConsoleAgent
           t.boolean :executed,      default: false
           t.string  :provider,      limit: 50
           t.string  :model,         limit: 100
+          t.string  :name,          limit: 255
           t.integer :duration_ms
           t.datetime :created_at,   null: false
         end
 
         conn.add_index(table, :created_at)
         conn.add_index(table, :user_name)
+        conn.add_index(table, :name)
 
         $stdout.puts "\e[32mConsoleAgent: created #{table} table.\e[0m"
       end
     rescue => e
       $stderr.puts "\e[31mConsoleAgent setup failed: #{e.class}: #{e.message}\e[0m"
+    end
+
+    def migrate!
+      conn = session_connection
+      table = 'console_agent_sessions'
+
+      unless conn.table_exists?(table)
+        $stderr.puts "\e[33mConsoleAgent: #{table} does not exist. Run ConsoleAgent.setup! first.\e[0m"
+        return
+      end
+
+      migrations = []
+
+      unless conn.column_exists?(table, :name)
+        conn.add_column(table, :name, :string, limit: 255)
+        conn.add_index(table, :name) unless conn.index_exists?(table, :name)
+        migrations << 'name'
+      end
+
+      if migrations.empty?
+        $stdout.puts "\e[32mConsoleAgent: #{table} is up to date.\e[0m"
+      else
+        $stdout.puts "\e[32mConsoleAgent: added columns: #{migrations.join(', ')}.\e[0m"
+      end
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent migrate failed: #{e.class}: #{e.message}\e[0m"
     end
 
     def teardown!

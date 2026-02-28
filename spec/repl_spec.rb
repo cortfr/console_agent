@@ -153,6 +153,55 @@ RSpec.describe ConsoleAgent::Repl do
       expect(output).to include('out: 50')
     end
   end
+  describe '#resume' do
+    let(:mock_session) do
+      double('Session',
+        id: 42,
+        query: 'find user 123',
+        name: 'sf_user_123',
+        conversation: [
+          { role: 'user', content: 'find user 123' },
+          { role: 'assistant', content: 'Looking up user 123...' }
+        ].to_json,
+        console_output: "ai> find user 123\nLooking up user 123...\n",
+        input_tokens: 100,
+        output_tokens: 50
+      )
+    end
+
+    it 'replays previous console output' do
+      allow(Readline).to receive(:readline).and_return(nil) # immediate Ctrl-D
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      output = capture_stdout { repl.resume(mock_session) }
+      expect(output).to include('Replaying previous session output')
+      expect(output).to include('find user 123')
+      expect(output).to include('End of previous output')
+    end
+
+    it 'restores token counts from session' do
+      allow(Readline).to receive(:readline).and_return(nil)
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      output = capture_stdout { repl.resume(mock_session) }
+      # Session summary should show restored token counts
+      expect(output).to include('in: 100')
+      expect(output).to include('out: 50')
+    end
+
+    it 'continues interactive loop after replay' do
+      # After replay, user types a new query then exits
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? 'exit' : nil
+      end
+
+      output = capture_stdout { repl.resume(mock_session) }
+      expect(output).to include('Left ConsoleAgent interactive mode')
+    end
+  end
 end
 
 def capture_stdout
