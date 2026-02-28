@@ -16,7 +16,7 @@ module ConsoleAgent
 
     def one_shot(query)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      result = send_query(query)
+      result, _ = send_query(query)
       track_usage(result)
       code = @executor.display_response(result.text)
       display_usage(result)
@@ -56,7 +56,7 @@ module ConsoleAgent
 
     def explain(query)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      result = send_query(query)
+      result, _ = send_query(query)
       track_usage(result)
       @executor.display_response(result.text)
       display_usage(result)
@@ -85,7 +85,9 @@ module ConsoleAgent
       $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab to toggle)\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
-      Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
+      if Readline.respond_to?(:parse_and_bind)
+        Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
+      end
 
       @history = []
       @total_input_tokens = 0
@@ -122,7 +124,7 @@ module ConsoleAgent
         log_interactive_turn
 
         begin
-          result = send_query(input, conversation: @history)
+          result, tool_messages = send_query(input, conversation: @history)
         rescue Interrupt
           $stdout.puts "\n\e[33m  Aborted.\e[0m"
           @history.pop # Remove the user message that never got a response
@@ -134,6 +136,8 @@ module ConsoleAgent
         code = @executor.display_response(result.text)
         display_usage(result, show_session: true)
 
+        # Add tool call/result messages so the LLM remembers what it learned
+        @history.concat(tool_messages) if tool_messages && !tool_messages.empty?
         @history << { role: :assistant, content: result.text }
 
         if code && !code.strip.empty?
@@ -208,7 +212,7 @@ module ConsoleAgent
       ConsoleAgent.configuration.validate!
 
       messages = if conversation
-                   conversation.map { |m| { role: m[:role], content: m[:content] } }
+                   conversation.dup
                  else
                    [{ role: :user, content: query }]
                  end
@@ -216,7 +220,7 @@ module ConsoleAgent
       if ConsoleAgent.configuration.context_mode == :smart
         send_query_with_tools(messages)
       else
-        provider.chat(messages, system_prompt: context)
+        [provider.chat(messages, system_prompt: context), []]
       end
     end
 
@@ -227,6 +231,7 @@ module ConsoleAgent
       total_input = 0
       total_output = 0
       result = nil
+      new_messages = []  # Track messages added during tool use
 
       exhausted = false
 
@@ -247,7 +252,9 @@ module ConsoleAgent
         end
 
         # Add assistant message with tool calls to conversation
-        messages << provider.format_assistant_message(result)
+        assistant_msg = provider.format_assistant_message(result)
+        messages << assistant_msg
+        new_messages << assistant_msg
 
         # Execute each tool and show progress
         result.tool_calls.each do |tc|
@@ -269,7 +276,9 @@ module ConsoleAgent
             $stderr.puts "\e[35m[debug tool result] #{tool_result}\e[0m"
           end
 
-          messages << provider.format_tool_result(tc[:id], tool_result)
+          tool_msg = provider.format_tool_result(tc[:id], tool_result)
+          messages << tool_msg
+          new_messages << tool_msg
         end
 
         exhausted = true if round == max_rounds - 1
@@ -284,12 +293,13 @@ module ConsoleAgent
         total_output += result.output_tokens || 0
       end
 
-      Providers::ChatResult.new(
+      final_result = Providers::ChatResult.new(
         text: result ? result.text : '',
         input_tokens: total_input,
         output_tokens: total_output,
         stop_reason: result ? result.stop_reason : :end_turn
       )
+      [final_result, new_messages]
     end
 
     def format_tool_args(name, args)

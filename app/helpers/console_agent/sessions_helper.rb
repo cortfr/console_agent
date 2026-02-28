@@ -1,6 +1,7 @@
 module ConsoleAgent
   module SessionsHelper
-    def format_message_content(text)
+    def format_message_content(content)
+      text = content.is_a?(String) ? content : content.to_json
       # Split on fenced code blocks (```lang ... ```)
       parts = text.split(/(```\w*\n.*?```)/m)
 
