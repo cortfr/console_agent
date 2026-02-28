@@ -80,7 +80,13 @@ module ConsoleAgent
 
     def interactive
       @interactive_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      auto = ConsoleAgent.configuration.auto_execute
       $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
+      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab to toggle)\e[0m"
+
+      # Bind Shift-Tab to insert /auto command and submit
+      Readline.parse_and_bind('"\e[Z": "\C-a\C-k/auto\C-m"')
+
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
@@ -98,6 +104,13 @@ module ConsoleAgent
         input = input.strip
         break if input.downcase == 'exit' || input.downcase == 'quit'
         next if input.empty?
+
+        if input == '/auto'
+          ConsoleAgent.configuration.auto_execute = !ConsoleAgent.configuration.auto_execute
+          mode = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
+          $stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
+          next
+        end
 
         # Add to Readline history (avoid consecutive duplicates)
         Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
