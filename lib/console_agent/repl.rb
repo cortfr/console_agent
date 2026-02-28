@@ -79,12 +79,13 @@ module ConsoleAgent
     end
 
     def interactive
-      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @interactive_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
       @interactive_query = nil
+      @interactive_session_id = nil
       @last_interactive_code = nil
       @last_interactive_output = nil
       @last_interactive_result = nil
@@ -104,11 +105,15 @@ module ConsoleAgent
         @interactive_query ||= input
         @history << { role: :user, content: input }
 
+        # Save immediately so the session is visible in the admin UI while the AI thinks
+        log_interactive_turn
+
         begin
           result = send_query(input, conversation: @history)
         rescue Interrupt
           $stdout.puts "\n\e[33m  Aborted.\e[0m"
           @history.pop # Remove the user message that never got a response
+          log_interactive_turn
           next
         end
 
@@ -154,36 +159,18 @@ module ConsoleAgent
             end
           end
         end
+
+        # Update with the AI response, tokens, and any execution results
+        log_interactive_turn
       end
 
-      log_session(
-        query: @interactive_query || '(interactive session)',
-        conversation: @history,
-        mode: 'interactive',
-        code_executed: @last_interactive_code,
-        code_output: @last_interactive_output,
-        code_result: @last_interactive_result,
-        executed: @last_interactive_executed,
-        start_time: start_time
-      )
-
+      finish_interactive_session
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue Interrupt
       # Ctrl-C during Readline input — exit cleanly
       $stdout.puts
-
-      log_session(
-        query: @interactive_query || '(interactive session)',
-        conversation: @history,
-        mode: 'interactive',
-        code_executed: @last_interactive_code,
-        code_output: @last_interactive_output,
-        code_result: @last_interactive_result,
-        executed: @last_interactive_executed,
-        start_time: start_time
-      )
-
+      finish_interactive_session
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue => e
@@ -398,6 +385,59 @@ module ConsoleAgent
       end
 
       $stdout.puts line
+    end
+
+    def log_interactive_turn
+      require 'console_agent/session_logger'
+      session_attrs = {
+        conversation:  @history,
+        input_tokens:  @total_input_tokens,
+        output_tokens: @total_output_tokens,
+        code_executed: @last_interactive_code,
+        code_output:   @last_interactive_output,
+        code_result:   @last_interactive_result,
+        executed:      @last_interactive_executed
+      }
+
+      if @interactive_session_id
+        SessionLogger.update(@interactive_session_id, session_attrs)
+      else
+        @interactive_session_id = SessionLogger.log(
+          session_attrs.merge(
+            query: @interactive_query || '(interactive session)',
+            mode:  'interactive'
+          )
+        )
+      end
+    end
+
+    def finish_interactive_session
+      require 'console_agent/session_logger'
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @interactive_start) * 1000).round
+      if @interactive_session_id
+        SessionLogger.update(@interactive_session_id,
+          conversation:  @history,
+          input_tokens:  @total_input_tokens,
+          output_tokens: @total_output_tokens,
+          code_executed: @last_interactive_code,
+          code_output:   @last_interactive_output,
+          code_result:   @last_interactive_result,
+          executed:      @last_interactive_executed,
+          duration_ms:   duration_ms
+        )
+      elsif @interactive_query
+        # Session was never created (e.g., only one turn that failed to log)
+        log_session(
+          query: @interactive_query,
+          conversation: @history,
+          mode: 'interactive',
+          code_executed: @last_interactive_code,
+          code_output: @last_interactive_output,
+          code_result: @last_interactive_result,
+          executed: @last_interactive_executed,
+          start_time: @interactive_start
+        )
+      end
     end
 
     def log_session(attrs)

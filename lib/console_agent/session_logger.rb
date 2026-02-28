@@ -5,7 +5,7 @@ module ConsoleAgent
         return unless ConsoleAgent.configuration.session_logging
         return unless table_exists?
 
-        session_class.create!(
+        record = session_class.create!(
           query:         attrs[:query],
           conversation:  Array(attrs[:conversation]).to_json,
           input_tokens:  attrs[:input_tokens] || 0,
@@ -21,8 +21,32 @@ module ConsoleAgent
           duration_ms:   attrs[:duration_ms],
           created_at:    Time.respond_to?(:current) ? Time.current : Time.now
         )
+        record.id
       rescue => e
         msg = "ConsoleAgent: session logging failed: #{e.class}: #{e.message}"
+        $stderr.puts "\e[33m#{msg}\e[0m" if $stderr.respond_to?(:puts)
+        ConsoleAgent.logger.warn(msg)
+        nil
+      end
+
+      def update(id, attrs)
+        return unless id
+        return unless ConsoleAgent.configuration.session_logging
+        return unless table_exists?
+
+        updates = {}
+        updates[:conversation]  = Array(attrs[:conversation]).to_json if attrs.key?(:conversation)
+        updates[:input_tokens]  = attrs[:input_tokens]  if attrs.key?(:input_tokens)
+        updates[:output_tokens] = attrs[:output_tokens] if attrs.key?(:output_tokens)
+        updates[:code_executed] = attrs[:code_executed]  if attrs.key?(:code_executed)
+        updates[:code_output]   = attrs[:code_output]    if attrs.key?(:code_output)
+        updates[:code_result]   = attrs[:code_result]    if attrs.key?(:code_result)
+        updates[:executed]      = attrs[:executed]       if attrs.key?(:executed)
+        updates[:duration_ms]   = attrs[:duration_ms]    if attrs.key?(:duration_ms)
+
+        session_class.where(id: id).update_all(updates) unless updates.empty?
+      rescue => e
+        msg = "ConsoleAgent: session update failed: #{e.class}: #{e.message}"
         $stderr.puts "\e[33m#{msg}\e[0m" if $stderr.respond_to?(:puts)
         ConsoleAgent.logger.warn(msg)
         nil
@@ -31,18 +55,16 @@ module ConsoleAgent
       private
 
       def table_exists?
-        unless instance_variable_defined?(:@table_exists_checked)
-          @table_exists_checked = true
-          @table_exists = session_class.connection.table_exists?('console_agent_sessions')
-        end
-        @table_exists
+        # Only cache positive results — retry on failure so transient
+        # errors (boot timing, connection not ready) don't stick forever
+        return true if @table_exists
+        @table_exists = session_class.connection.table_exists?('console_agent_sessions')
       rescue
-        @table_exists_checked = true
-        @table_exists = false
+        false
       end
 
       def session_class
-        @session_class ||= Object.const_get('ConsoleAgent::Session')
+        Object.const_get('ConsoleAgent::Session')
       end
 
       def current_user_name
