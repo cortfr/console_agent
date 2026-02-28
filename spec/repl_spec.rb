@@ -153,6 +153,82 @@ RSpec.describe ConsoleAgent::Repl do
       expect(output).to include('out: 50')
     end
   end
+  describe 'interrupt and redirect' do
+    it 'prompts for redirect when API call is interrupted and continues with redirect input' do
+      call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        call_count += 1
+        if call_count == 1
+          raise Interrupt
+        else
+          chat_result("Here you go:\n```ruby\n42\n```")
+        end
+      end
+
+      allow($stdin).to receive(:gets).and_return("Focus on the users table instead\n")
+      allow($stdin).to receive(:cooked) if $stdin.respond_to?(:cooked)
+
+      output = capture_stdout do
+        allow($stdin).to receive(:gets).and_return("Focus on the users table instead\n", "y\n")
+        result = repl.one_shot('show tables')
+        expect(result).to eq(42)
+      end
+
+      expect(output).to include('Interrupted')
+      expect(output).to include('redirect>')
+      expect(call_count).to eq(2)
+    end
+
+    it 're-raises Interrupt when redirect input is empty (full abort)' do
+      allow(mock_provider).to receive(:chat_with_tools).and_raise(Interrupt)
+      allow($stdin).to receive(:gets).and_return("\n")
+
+      expect {
+        repl.send(:send_query, 'test')
+      }.to raise_error(Interrupt)
+    end
+
+    it 're-raises Interrupt when redirect input is nil (Ctrl-D)' do
+      allow(mock_provider).to receive(:chat_with_tools).and_raise(Interrupt)
+      allow($stdin).to receive(:gets).and_return(nil)
+
+      expect {
+        repl.send(:send_query, 'test')
+      }.to raise_error(Interrupt)
+    end
+
+    it 'injects redirect as a user message in the conversation' do
+      call_count = 0
+      captured_messages = nil
+      allow(mock_provider).to receive(:chat_with_tools) do |messages, **_opts|
+        call_count += 1
+        if call_count == 1
+          raise Interrupt
+        else
+          captured_messages = messages.dup
+          chat_result("Done")
+        end
+      end
+
+      allow($stdin).to receive(:gets).and_return("Try a different approach\n")
+
+      repl.send(:send_query, 'original query')
+
+      expect(captured_messages).to be_an(Array)
+      redirect_msg = captured_messages.find { |m| m[:content] == 'Try a different approach' }
+      expect(redirect_msg).not_to be_nil
+      expect(redirect_msg[:role]).to eq(:user)
+    end
+
+    it 'does not interfere with normal non-interrupted flow' do
+      stub_no_tools(chat_result("Result:\n```ruby\n1 + 1\n```"))
+      allow($stdin).to receive(:gets).and_return("y\n")
+
+      result = repl.one_shot('add numbers')
+      expect(result).to eq(2)
+    end
+  end
+
   describe '#resume' do
     let(:mock_session) do
       double('Session',

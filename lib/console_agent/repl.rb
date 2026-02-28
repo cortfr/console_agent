@@ -328,7 +328,20 @@ module ConsoleAgent
           $stdout.puts "\e[2m  Thinking...\e[0m"
         end
 
-        result = provider.chat_with_tools(messages, tools: tools, system_prompt: context)
+        begin
+          result = with_escape_monitoring do
+            provider.chat_with_tools(messages, tools: tools, system_prompt: context)
+          end
+        rescue Interrupt
+          redirect = prompt_for_redirect
+          if redirect
+            messages << { role: :user, content: redirect }
+            new_messages << messages.last
+            next
+          else
+            raise
+          end
+        end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
 
@@ -388,6 +401,59 @@ module ConsoleAgent
         stop_reason: result ? result.stop_reason : :end_turn
       )
       [final_result, new_messages]
+    end
+
+    # Monitors stdin for Escape (or Ctrl+C, since raw mode disables signals)
+    # and raises Interrupt in the main thread when detected.
+    def with_escape_monitoring
+      require 'io/console'
+      return yield unless $stdin.respond_to?(:raw)
+
+      monitor = Thread.new do
+        Thread.current.report_on_exception = false
+        $stdin.raw do |io|
+          loop do
+            break if Thread.current[:stop]
+            ready = IO.select([io], nil, nil, 0.2)
+            next unless ready
+
+            char = io.read_nonblock(1) rescue nil
+            next unless char
+
+            if char == "\x03" # Ctrl+C (raw mode eats the signal)
+              Thread.main.raise(Interrupt)
+              break
+            elsif char == "\e"
+              # Distinguish standalone Escape from escape sequences (arrow keys, etc.)
+              seq = IO.select([io], nil, nil, 0.05)
+              if seq
+                io.read_nonblock(10) rescue nil # consume the sequence
+              else
+                Thread.main.raise(Interrupt)
+                break
+              end
+            end
+          end
+        end
+      rescue IOError, Errno::EIO, Errno::ENODEV, Errno::ENOTTY
+        # stdin is not a TTY (e.g. in tests or piped input) — silently skip
+      end
+
+      begin
+        yield
+      ensure
+        monitor[:stop] = true
+        monitor.join(1) rescue nil
+      end
+    end
+
+    def prompt_for_redirect
+      $stdout.puts "\n\e[33m  Interrupted. What should the AI do differently?\e[0m"
+      $stdout.puts "\e[2m  (Press Enter with no input to abort entirely)\e[0m"
+      $stdout.print "\e[33m  redirect> \e[0m"
+      input = $stdin.gets
+      return nil if input.nil? || input.strip.empty?
+      input.strip
     end
 
     def format_tool_args(name, args)
