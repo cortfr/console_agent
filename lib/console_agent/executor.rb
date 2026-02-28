@@ -3,6 +3,8 @@ require 'stringio'
 module ConsoleAgent
   # Writes to two IO streams simultaneously
   class TeeIO
+    attr_reader :secondary
+
     def initialize(primary, secondary)
       @primary = primary
       @secondary = secondary
@@ -42,6 +44,7 @@ module ConsoleAgent
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
     attr_reader :binding_context
+    attr_accessor :on_prompt
 
     def initialize(binding_context)
       @binding_context = binding_context
@@ -101,6 +104,10 @@ module ConsoleAgent
       @last_output
     end
 
+    def last_answer
+      @last_answer
+    end
+
     def last_cancelled?
       @last_cancelled
     end
@@ -109,8 +116,12 @@ module ConsoleAgent
       return nil if code.nil? || code.strip.empty?
 
       @last_cancelled = false
+      @last_answer = nil
       $stdout.print colorize("Execute? [y/N/edit] ", :yellow)
+      @on_prompt&.call
       answer = $stdin.gets.to_s.strip.downcase
+      @last_answer = answer
+      echo_stdin(answer)
 
       case answer
       when 'y', 'yes'
@@ -121,7 +132,9 @@ module ConsoleAgent
           $stdout.puts colorize("# Edited code:", :yellow)
           $stdout.puts highlight_code(edited)
           $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
-          if $stdin.gets.to_s.strip.downcase == 'y'
+          edit_answer = $stdin.gets.to_s.strip.downcase
+          echo_stdin(edit_answer)
+          if edit_answer == 'y'
             execute(edited)
           else
             $stdout.puts colorize("Cancelled.", :yellow)
@@ -138,6 +151,11 @@ module ConsoleAgent
     end
 
     private
+
+    # Write stdin input to the capture IO only (avoids double-echo on terminal)
+    def echo_stdin(text)
+      $stdout.secondary.write("#{text}\n") if $stdout.respond_to?(:secondary)
+    end
 
     def open_in_editor(code)
       require 'tempfile'

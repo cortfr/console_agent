@@ -11,11 +11,6 @@ module ConsoleAgent
 
     def show
       @session = Session.find(params[:id])
-      @conversation = begin
-        JSON.parse(@session.conversation)
-      rescue
-        []
-      end
     end
   end
 end

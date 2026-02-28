@@ -84,26 +84,7 @@ module ConsoleAgent
       table = 'console_agent_sessions'
 
       if conn.table_exists?(table)
-        # Run any pending column additions
-        migrations = []
-
-        # Future migrations go here as:
-        #   migrations << ['column_name', :type, { options }]
-
-        if migrations.any?
-          existing = conn.columns(table).map(&:name)
-          applied = 0
-          migrations.each do |col, type, opts|
-            unless existing.include?(col.to_s)
-              conn.add_column(table, col, type, **(opts || {}))
-              applied += 1
-            end
-          end
-          $stdout.puts "\e[32mConsoleAgent: applied #{applied} column migration(s).\e[0m" if applied > 0
-          $stdout.puts "\e[32mConsoleAgent: #{table} is up to date.\e[0m" if applied == 0
-        else
-          $stdout.puts "\e[32mConsoleAgent: #{table} already exists and is up to date.\e[0m"
-        end
+        $stdout.puts "\e[32mConsoleAgent: #{table} already exists. Run ConsoleAgent.teardown! first to recreate.\e[0m"
       else
         conn.create_table(table) do |t|
           t.text    :query,         null: false
@@ -115,6 +96,7 @@ module ConsoleAgent
           t.text    :code_executed
           t.text    :code_output
           t.text    :code_result
+          t.text    :console_output
           t.boolean :executed,      default: false
           t.string  :provider,      limit: 50
           t.string  :model,         limit: 100

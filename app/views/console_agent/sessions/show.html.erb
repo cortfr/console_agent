@@ -37,47 +37,14 @@
   </div>
 </div>
 
-<h3 style="margin-bottom: 12px; font-size: 16px;">Conversation</h3>
+<h3 style="font-size: 16px; margin-bottom: 12px;">Console Output</h3>
 
-<%
-  # Find the last assistant message that contains the executed code,
-  # so we can show execution results right after it
-  exec_after_index = nil
-  if @session.code_executed.present?
-    @conversation.each_with_index do |msg, i|
-      if msg['role'] == 'assistant' && msg['content'].to_s.include?(@session.code_executed.to_s.lines.first.to_s.strip)
-        exec_after_index = i
-      end
-    end
-    # Fallback: show after the last assistant message
-    exec_after_index ||= @conversation.rindex { |msg| msg['role'] == 'assistant' }
-  end
-%>
-
-<% @conversation.each_with_index do |msg, i| %>
-  <div class="message message-<%= msg['role'] %>">
-    <div class="message-role"><%= msg['role'] %></div>
-    <div class="message-content"><%= format_message_content(msg['content'].to_s) %></div>
+<% if @session.console_output.present? %>
+  <div class="terminal">
+    <pre><%= ansi_to_html(@session.console_output) %></pre>
   </div>
-
-  <% if exec_after_index == i && @session.executed? %>
-    <div class="message message-execution">
-      <div class="message-role">execution</div>
-      <% if @session.code_output.present? %>
-        <div class="exec-label">Output</div>
-        <pre><%= h(@session.code_output) %></pre>
-      <% end %>
-      <% if @session.code_result.present? %>
-        <div class="exec-label">Return value</div>
-        <pre><%= h(@session.code_result) %></pre>
-      <% end %>
-    </div>
-  <% end %>
-<% end %>
-
-<% if @session.code_executed.present? && !@session.executed? %>
-  <div class="message message-execution">
-    <div class="message-role">code (not executed)</div>
-    <pre><%= h(@session.code_executed) %></pre>
+<% else %>
+  <div class="meta-card">
+    <p class="text-muted">No console output recorded for this session.</p>
   </div>
 <% end %>

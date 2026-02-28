@@ -15,6 +15,7 @@ module ConsoleAgent
           code_executed: attrs[:code_executed],
           code_output:   attrs[:code_output],
           code_result:   attrs[:code_result],
+          console_output: attrs[:console_output],
           executed:      attrs[:executed] || false,
           provider:      ConsoleAgent.configuration.provider.to_s,
           model:         ConsoleAgent.configuration.resolved_model,
@@ -41,6 +42,7 @@ module ConsoleAgent
         updates[:code_executed] = attrs[:code_executed]  if attrs.key?(:code_executed)
         updates[:code_output]   = attrs[:code_output]    if attrs.key?(:code_output)
         updates[:code_result]   = attrs[:code_result]    if attrs.key?(:code_result)
+        updates[:console_output] = attrs[:console_output] if attrs.key?(:console_output)
         updates[:executed]      = attrs[:executed]       if attrs.key?(:executed)
         updates[:duration_ms]   = attrs[:duration_ms]    if attrs.key?(:duration_ms)
 

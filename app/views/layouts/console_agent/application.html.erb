@@ -42,16 +42,17 @@
     .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
     .meta-item label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; display: block; }
     .meta-item span { font-size: 14px; color: #333; }
-    .message { margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; }
-    .message-user { background: #e3f2fd; border-left: 4px solid #2196f3; }
-    .message-assistant { background: #fff; border-left: 4px solid #4caf50; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-    .message-execution { background: #f0f0f0; border-left: 4px solid #ff9800; }
-    .message-role { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #888; margin-bottom: 4px; }
-    .message-content { word-break: break-word; font-size: 14px; }
-    .exec-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #888; margin-top: 8px; margin-bottom: 2px; }
-    pre { background: #2d2d2d; color: #f8f8f2; padding: 12px 16px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0; }
-    .exec-section { margin-top: 16px; }
-    .exec-section h3 { font-size: 14px; margin-bottom: 8px; color: #555; }
+    .terminal {
+      background: #1e1e1e; border-radius: 8px; overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .terminal pre {
+      background: transparent; color: #d4d4d4;
+      padding: 16px 20px; margin: 0;
+      font-family: "SF Mono", "Monaco", "Menlo", "Consolas", monospace;
+      font-size: 13px; line-height: 1.5;
+      overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;
+    }
     .mono { font-family: "SF Mono", "Monaco", "Menlo", "Consolas", monospace; font-size: 13px; }
     .text-muted { color: #888; }
     .back-link { margin-bottom: 16px; display: inline-block; }

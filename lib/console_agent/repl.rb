@@ -16,34 +16,41 @@ module ConsoleAgent
 
     def one_shot(query)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      result, _ = send_query(query)
-      track_usage(result)
-      code = @executor.display_response(result.text)
-      display_usage(result)
+      console_capture = StringIO.new
+      exec_result = with_console_capture(console_capture) do
+        result, _ = send_query(query)
+        track_usage(result)
+        code = @executor.display_response(result.text)
+        display_usage(result)
 
-      exec_result = nil
-      executed = false
-      has_code = code && !code.strip.empty?
+        exec_result = nil
+        executed = false
+        has_code = code && !code.strip.empty?
 
-      if has_code
-        exec_result = if ConsoleAgent.configuration.auto_execute
-                        @executor.execute(code)
-                      else
-                        @executor.confirm_and_execute(code)
-                      end
-        executed = !@executor.last_cancelled?
+        if has_code
+          exec_result = if ConsoleAgent.configuration.auto_execute
+                          @executor.execute(code)
+                        else
+                          @executor.confirm_and_execute(code)
+                        end
+          executed = !@executor.last_cancelled?
+        end
+
+        @_last_log_attrs = {
+          query: query,
+          conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
+          mode: 'one_shot',
+          code_executed: has_code ? code : nil,
+          code_output: executed ? @executor.last_output : nil,
+          code_result: executed && exec_result ? exec_result.inspect : nil,
+          executed: executed,
+          start_time: start_time
+        }
+
+        exec_result
       end
 
-      log_session(
-        query: query,
-        conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
-        mode: 'one_shot',
-        code_executed: has_code ? code : nil,
-        code_output: executed ? @executor.last_output : nil,
-        code_result: executed && exec_result ? exec_result.inspect : nil,
-        executed: executed,
-        start_time: start_time
-      )
+      log_session(@_last_log_attrs.merge(console_output: console_capture.string))
 
       exec_result
     rescue Providers::ProviderError => e
@@ -56,18 +63,23 @@ module ConsoleAgent
 
     def explain(query)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      result, _ = send_query(query)
-      track_usage(result)
-      @executor.display_response(result.text)
-      display_usage(result)
+      console_capture = StringIO.new
+      with_console_capture(console_capture) do
+        result, _ = send_query(query)
+        track_usage(result)
+        @executor.display_response(result.text)
+        display_usage(result)
 
-      log_session(
-        query: query,
-        conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
-        mode: 'explain',
-        executed: false,
-        start_time: start_time
-      )
+        @_last_log_attrs = {
+          query: query,
+          conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
+          mode: 'explain',
+          executed: false,
+          start_time: start_time
+        }
+      end
+
+      log_session(@_last_log_attrs.merge(console_output: console_capture.string))
 
       nil
     rescue Providers::ProviderError => e
@@ -80,6 +92,11 @@ module ConsoleAgent
 
     def interactive
       @interactive_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @interactive_console_capture = StringIO.new
+      @interactive_old_stdout = $stdout
+      $stdout = TeeIO.new(@interactive_old_stdout, @interactive_console_capture)
+      @executor.on_prompt = -> { log_interactive_turn }
+
       auto = ConsoleAgent.configuration.auto_execute
       $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
       $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage for token stats\e[0m"
@@ -132,6 +149,9 @@ module ConsoleAgent
         @interactive_query ||= input
         @history << { role: :user, content: input }
 
+        # Log the user's prompt line to the console capture (Readline doesn't go through $stdout)
+        @interactive_console_capture.write("ai> #{input}\n")
+
         # Save immediately so the session is visible in the admin UI while the AI thinks
         log_interactive_turn
 
@@ -147,6 +167,9 @@ module ConsoleAgent
         track_usage(result)
         code = @executor.display_response(result.text)
         display_usage(result, show_session: true)
+
+        # Save after response is displayed so viewer shows progress before Execute prompt
+        log_interactive_turn
 
         # Add tool call/result messages so the LLM remembers what it learned
         @history.concat(tool_messages) if tool_messages && !tool_messages.empty?
@@ -193,16 +216,22 @@ module ConsoleAgent
         log_interactive_turn
       end
 
+      $stdout = @interactive_old_stdout
+      @executor.on_prompt = nil
       finish_interactive_session
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue Interrupt
       # Ctrl-C during Readline input — exit cleanly
+      $stdout = @interactive_old_stdout if @interactive_old_stdout
+      @executor.on_prompt = nil
       $stdout.puts
       finish_interactive_session
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue => e
+      $stdout = @interactive_old_stdout if @interactive_old_stdout
+      @executor.on_prompt = nil
       $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
     end
 
@@ -424,6 +453,14 @@ module ConsoleAgent
       $stdout.puts line
     end
 
+    def with_console_capture(capture_io)
+      old_stdout = $stdout
+      $stdout = TeeIO.new(old_stdout, capture_io)
+      yield
+    ensure
+      $stdout = old_stdout
+    end
+
     def log_interactive_turn
       require 'console_agent/session_logger'
       session_attrs = {
@@ -433,7 +470,8 @@ module ConsoleAgent
         code_executed: @last_interactive_code,
         code_output:   @last_interactive_output,
         code_result:   @last_interactive_result,
-        executed:      @last_interactive_executed
+        executed:      @last_interactive_executed,
+        console_output: @interactive_console_capture&.string
       }
 
       if @interactive_session_id
@@ -460,6 +498,7 @@ module ConsoleAgent
           code_output:   @last_interactive_output,
           code_result:   @last_interactive_result,
           executed:      @last_interactive_executed,
+          console_output: @interactive_console_capture&.string,
           duration_ms:   duration_ms
         )
       elsif @interactive_query
@@ -472,6 +511,7 @@ module ConsoleAgent
           code_output: @last_interactive_output,
           code_result: @last_interactive_result,
           executed: @last_interactive_executed,
+          console_output: @interactive_console_capture&.string,
           start_time: @interactive_start
         )
       end
