@@ -67,11 +67,10 @@ module ConsoleAgent
       lines << "  Provider:       #{c.provider}"
       lines << "  Model:          #{c.resolved_model}"
       lines << "  API key:        #{masked_key}"
-      lines << "  Context mode:   #{c.context_mode}"
       lines << "  Max tokens:     #{c.max_tokens}"
       lines << "  Temperature:    #{c.temperature}"
       lines << "  Timeout:        #{c.timeout}s"
-      lines << "  Max tool rounds:#{c.max_tool_rounds}" if c.context_mode == :smart
+      lines << "  Max tool rounds:#{c.max_tool_rounds}"
       lines << "  Auto-execute:   #{c.auto_execute}"
       lines << "  Memories:       #{c.memories_enabled}"
       lines << "  Debug:          #{c.debug}"

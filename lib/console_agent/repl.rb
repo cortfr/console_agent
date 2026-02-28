@@ -229,11 +229,7 @@ module ConsoleAgent
                    [{ role: :user, content: query }]
                  end
 
-      if ConsoleAgent.configuration.context_mode == :smart
-        send_query_with_tools(messages)
-      else
-        [provider.chat(messages, system_prompt: context), []]
-      end
+      send_query_with_tools(messages)
     end
 
     def send_query_with_tools(messages)

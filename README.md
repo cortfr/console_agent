@@ -131,7 +131,7 @@ All settings live in `config/initializers/console_agent.rb` and can be changed a
 ConsoleAgent.configure do |config|
   config.provider = :anthropic       # or :openai
   config.auto_execute = false         # true to skip confirmations
-  config.context_mode = :smart        # or :full (sends entire schema every time)
+  config.max_tokens = 4096             # max tokens per LLM response
   config.max_tool_rounds = 10         # max tool calls per query
   config.session_logging = true       # log sessions to DB (needs migration)
 end

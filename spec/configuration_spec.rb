@@ -16,10 +16,6 @@ RSpec.describe ConsoleAgent::Configuration do
       expect(config.auto_execute).to eq(false)
     end
 
-    it 'sets context_mode to :smart' do
-      expect(config.context_mode).to eq(:smart)
-    end
-
     it 'sets temperature to 0.2' do
       expect(config.temperature).to eq(0.2)
     end

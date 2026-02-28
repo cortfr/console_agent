@@ -13,7 +13,6 @@ RSpec.describe ConsoleAgent::Repl do
     ConsoleAgent.configure do |c|
       c.api_key = 'test-key'
       c.provider = :anthropic
-      c.context_mode = :full
     end
 
     allow(ConsoleAgent::Providers).to receive(:build).and_return(mock_provider)
@@ -30,11 +29,13 @@ RSpec.describe ConsoleAgent::Repl do
     )
   end
 
-  describe '#one_shot (full mode)' do
+  def stub_no_tools(result)
+    allow(mock_provider).to receive(:chat_with_tools) { result }
+  end
+
+  describe '#one_shot' do
     it 'sends query to provider and displays response' do
-      allow(mock_provider).to receive(:chat).and_return(
-        chat_result("Here is the code:\n```ruby\n1 + 1\n```")
-      )
+      stub_no_tools(chat_result("Here is the code:\n```ruby\n1 + 1\n```"))
       allow($stdin).to receive(:gets).and_return("y\n")
 
       result = repl.one_shot('add numbers')
@@ -42,16 +43,14 @@ RSpec.describe ConsoleAgent::Repl do
     end
 
     it 'returns nil when provider returns no code' do
-      allow(mock_provider).to receive(:chat).and_return(
-        chat_result('Just an explanation, no code.')
-      )
+      stub_no_tools(chat_result('Just an explanation, no code.'))
 
       result = repl.one_shot('explain something')
       expect(result).to be_nil
     end
 
     it 'handles provider errors gracefully' do
-      allow(mock_provider).to receive(:chat)
+      allow(mock_provider).to receive(:chat_with_tools)
         .and_raise(ConsoleAgent::Providers::ProviderError, 'API down')
 
       expect { repl.one_shot('test') }.not_to raise_error
@@ -60,9 +59,7 @@ RSpec.describe ConsoleAgent::Repl do
 
   describe '#explain' do
     it 'displays response without executing' do
-      allow(mock_provider).to receive(:chat).and_return(
-        chat_result("Explanation:\n```ruby\nUser.count\n```")
-      )
+      stub_no_tools(chat_result("Explanation:\n```ruby\nUser.count\n```"))
 
       expect($stdin).not_to receive(:gets)
       result = repl.explain('what does this do')
@@ -70,15 +67,7 @@ RSpec.describe ConsoleAgent::Repl do
     end
   end
 
-  describe '#one_shot (smart mode with tools)' do
-    before do
-      ConsoleAgent.configure do |c|
-        c.api_key = 'test-key'
-        c.provider = :anthropic
-        c.context_mode = :smart
-      end
-    end
-
+  describe 'tool use' do
     it 'runs tool-use loop when LLM requests tools' do
       # First call: LLM wants to call list_tables
       tool_call_result = ConsoleAgent::Providers::ChatResult.new(
