@@ -25,6 +25,15 @@ ConsoleAgent.configure do |config|
 end
 ```
 
+To set up session logging (OPTIONAL), create the table from the console:
+
+```ruby
+ConsoleAgent.setup!
+# => ConsoleAgent: created console_agent_sessions table.
+```
+
+Run `ConsoleAgent.setup!` again after upgrading — it will apply any new migrations automatically.
+
 ## Usage
 
 ```
@@ -133,11 +142,11 @@ ConsoleAgent.configure do |config|
   config.auto_execute = false         # true to skip confirmations
   config.max_tokens = 4096             # max tokens per LLM response
   config.max_tool_rounds = 10         # max tool calls per query
-  config.session_logging = true       # log sessions to DB (needs migration)
+  config.session_logging = true       # log sessions to DB (run ConsoleAgent.setup!)
 end
 ```
 
-For session logging and the admin UI, run `rails generate console_agent:install_migrations` and mount the engine:
+For the admin UI, mount the engine:
 
 ```ruby
 mount ConsoleAgent::Engine => '/console_agent'
