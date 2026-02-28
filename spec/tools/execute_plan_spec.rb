@@ -143,40 +143,73 @@ RSpec.describe 'execute_plan tool' do
       expect(result).to include('Return value: 12')
     end
 
-    it 'returns declined message when plan is rejected' do
-      allow($stdin).to receive(:gets).and_return("n\n")
+    it 'runs all steps without per-step prompts when user answers auto' do
+      # Only one stdin read: "a" for plan approval, no per-step prompts
+      allow($stdin).to receive(:gets).and_return("a\n")
 
       result = registry.execute('execute_plan', two_steps)
 
-      expect(result).to eq('User declined the plan.')
+      expect(result).to include('Step 1 (Add two numbers)')
+      expect(result).to include('Return value: 2')
+      expect(result).to include('Step 2 (Multiply two numbers)')
+      expect(result).to include('Return value: 12')
     end
 
-    it 'declines plan on empty input' do
-      allow($stdin).to receive(:gets).and_return("\n")
+    it 'does not change global auto_execute when using plan-level auto' do
+      allow($stdin).to receive(:gets).and_return("auto\n")
+
+      registry.execute('execute_plan', two_steps)
+
+      expect(ConsoleAgent.configuration.auto_execute).to eq(false)
+    end
+
+    it 'shows auto option in the accept prompt' do
+      allow($stdin).to receive(:gets).and_return("a\n")
+
+      output = capture_stdout { registry.execute('execute_plan', two_steps) }
+
+      expect(output).to include('Accept plan? [y/N/a(uto)]')
+    end
+
+    it 'returns declined message with feedback when plan is rejected' do
+      # Decline plan, then provide feedback
+      allow($stdin).to receive(:gets).and_return("n\n", "use COUNT(Id) instead\n")
 
       result = registry.execute('execute_plan', two_steps)
 
-      expect(result).to eq('User declined the plan.')
+      expect(result).to include('User declined the plan.')
+      expect(result).to include('Feedback: use COUNT(Id) instead')
     end
 
-    it 'stops mid-plan when user declines a step' do
-      # Accept plan, accept step 1, decline step 2
-      allow($stdin).to receive(:gets).and_return("y\n", "y\n", "n\n")
+    it 'immediately prompts for feedback on plan decline' do
+      allow($stdin).to receive(:gets).and_return("n\n", "change step 2\n")
+
+      output = capture_stdout { registry.execute('execute_plan', two_steps) }
+
+      expect(output).to include('Plan declined.')
+      expect(output).to include('What would you like changed?')
+    end
+
+    it 'handles empty feedback on plan decline' do
+      allow($stdin).to receive(:gets).and_return("\n", "\n")
+
+      result = registry.execute('execute_plan', two_steps)
+
+      expect(result).to include('User declined the plan.')
+      expect(result).to include('(no feedback provided)')
+    end
+
+    it 'stops mid-plan when user declines a step and asks for feedback' do
+      # Accept plan, accept step 1, decline step 2, provide feedback
+      allow($stdin).to receive(:gets).and_return("y\n", "y\n", "n\n", "skip this step\n")
 
       result = registry.execute('execute_plan', two_steps)
 
       expect(result).to include('Step 1 (Add two numbers)')
       expect(result).to include('Return value: 2')
       expect(result).to include('Step 2: User declined.')
+      expect(result).to include('Feedback: skip this step')
       expect(result).not_to include('Return value: 12')
-    end
-
-    it 'shows plan declined output' do
-      allow($stdin).to receive(:gets).and_return("n\n")
-
-      output = capture_stdout { registry.execute('execute_plan', two_steps) }
-
-      expect(output).to include('Plan declined.')
     end
   end
 

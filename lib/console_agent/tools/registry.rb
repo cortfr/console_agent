@@ -277,12 +277,19 @@ module ConsoleAgent
         $stdout.puts
 
         # Ask for plan approval (unless auto-execute)
+        skip_confirmations = auto
         unless auto
-          $stdout.print "\e[33m  Accept plan? [y/N] \e[0m"
+          $stdout.print "\e[33m  Accept plan? [y/N/a(uto)] \e[0m"
           answer = $stdin.gets.to_s.strip.downcase
-          unless answer == 'y' || answer == 'yes'
+          case answer
+          when 'a', 'auto'
+            skip_confirmations = true
+          when 'y', 'yes'
+            # proceed with per-step confirmation
+          else
             $stdout.puts "\e[33m  Plan declined.\e[0m"
-            return 'User declined the plan.'
+            feedback = ask_feedback("What would you like changed?")
+            return "User declined the plan. Feedback: #{feedback}"
           end
         end
 
@@ -294,8 +301,8 @@ module ConsoleAgent
           $stdout.puts "\e[33m  # Code:\e[0m"
           $stdout.puts highlight_plan_code(step['code'])
 
-          # Per-step confirmation (unless auto-execute)
-          unless auto
+          # Per-step confirmation (unless auto-execute or plan-level auto)
+          unless skip_confirmations
             $stdout.print "\e[33m  Run? [y/N/edit] \e[0m"
             step_answer = $stdin.gets.to_s.strip.downcase
 
@@ -308,7 +315,8 @@ module ConsoleAgent
                 $stdout.print "\e[33m  Run edited code? [y/N] \e[0m"
                 confirm = $stdin.gets.to_s.strip.downcase
                 unless confirm == 'y' || confirm == 'yes'
-                  results << "Step #{i + 1}: User declined after edit."
+                  feedback = ask_feedback("What would you like changed?")
+                  results << "Step #{i + 1}: User declined after edit. Feedback: #{feedback}"
                   break
                 end
                 step['code'] = edited
@@ -316,7 +324,8 @@ module ConsoleAgent
             when 'y', 'yes'
               # proceed
             else
-              results << "Step #{i + 1}: User declined."
+              feedback = ask_feedback("What would you like changed?")
+              results << "Step #{i + 1}: User declined. Feedback: #{feedback}"
               break
             end
           end
@@ -368,6 +377,13 @@ module ConsoleAgent
         rescue LoadError
           false
         end
+      end
+
+      def ask_feedback(prompt)
+        $stdout.print "\e[36m  #{prompt} > \e[0m"
+        feedback = $stdin.gets
+        return '(no feedback provided)' if feedback.nil?
+        feedback.strip.empty? ? '(no feedback provided)' : feedback.strip
       end
 
       def ask_user(question)
