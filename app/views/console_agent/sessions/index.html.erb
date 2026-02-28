@@ -1,4 +1,7 @@
-<h2 style="margin-bottom: 16px; font-size: 20px;">Recent Sessions</h2>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+  <h2 style="font-size: 20px;">Sessions</h2>
+  <span class="text-muted" style="font-size: 14px;"><%= @total %> total</span>
+</div>
 
 <% if @sessions.empty? %>
   <div class="meta-card">
@@ -31,4 +34,22 @@
       <% end %>
     </tbody>
   </table>
+
+  <% if @total_pages > 1 %>
+    <div class="pagination">
+      <% if @page > 1 %>
+        <a href="<%= console_agent.sessions_path(page: @page - 1) %>">&larr; Newer</a>
+      <% else %>
+        <span class="disabled">&larr; Newer</span>
+      <% end %>
+
+      <span class="page-info">Page <%= @page %> of <%= @total_pages %></span>
+
+      <% if @page < @total_pages %>
+        <a href="<%= console_agent.sessions_path(page: @page + 1) %>">Older &rarr;</a>
+      <% else %>
+        <span class="disabled">Older &rarr;</span>
+      <% end %>
+    </div>
+  <% end %>
 <% end %>
