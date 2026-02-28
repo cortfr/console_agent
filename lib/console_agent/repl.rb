@@ -153,7 +153,7 @@ module ConsoleAgent
       end
 
       loop do
-        input = Readline.readline("\e[33mai> \e[0m", false)
+        input = Readline.readline("\001\e[33m\002ai> \001\e[0m\002", false)
         break if input.nil? # Ctrl-D
 
         input = input.strip
