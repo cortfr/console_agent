@@ -75,6 +75,62 @@ Execute? [y/N/edit] y
 => [#<Order id: 4821, ...>, ...]
 ```
 
+### Step-by-Step Plans
+
+For multi-step tasks, the AI builds a plan and walks you through it step by step:
+
+```
+irb> ai! "get the most recent salesforce token and count events via the API"
+  Thinking...
+  -> recall_memories("Salesforce")
+     2 memories found
+  -> describe_table("oauth2_tokens")
+     28 columns
+  -> read_file("lib/salesforce_api.rb")
+     202 lines
+
+  Plan (2 steps):
+  1. Find the most recent active Salesforce OAuth2 token
+     token = Oauth2Token.where(provider: "salesforce", active: true).order(updated_at: :desc).first
+     puts "Token ID: #{token.id}, Provider: #{token.provider}"
+     token
+  2. Initialize SalesforceApi and query event count via SOQL
+     api = SalesforceApi.new(step1)
+     result = api.query("SELECT COUNT(Id) FROM Event")
+     puts "Event count: #{result.inspect}"
+     result
+
+  Accept plan? [y/N/a(uto)] y
+
+  Step 1/2: Find the most recent active Salesforce OAuth2 token
+  # Code:
+     token = Oauth2Token.where(provider: "salesforce", active: true).order(updated_at: :desc).first
+     puts "Token ID: #{token.id}, Provider: #{token.provider}"
+     token
+  Run? [y/N/edit] y
+Token ID: 1, Provider: salesforce
+=> #<Oauth2Token id: 1, ...>
+
+  Step 2/2: Initialize SalesforceApi and query event count via SOQL
+  # Code:
+     api = SalesforceApi.new(step1)
+     result = api.query("SELECT COUNT(Id) FROM Event")
+     puts "Event count: #{result.inspect}"
+     result
+  Run? [y/N/edit] y
+Event count: [{"expr0"=>42}]
+=> [{"expr0"=>42}]
+```
+
+Each step's return value is stored as `step1`, `step2`, etc., so later steps can reference earlier results.
+
+**Plan approval options:**
+- **`y`** — accept the plan, then confirm each step individually (`Run? [y/N/edit]`)
+- **`a`** (auto) — accept and run all steps without per-step confirmation (reverts to normal mode after the plan completes)
+- **`N`** — decline the plan; you'll be immediately asked what you'd like changed and the AI will revise
+
+If you decline a step mid-plan, the AI sees partial results and your feedback, then adjusts.
+
 ### Interactive Mode
 
 ```
@@ -196,6 +252,7 @@ ConsoleAgent.configure { |c| c.context_mode = :full }
 | `read_file` | Read a source file (capped at 200 lines) |
 | `search_code` | Grep for a pattern across Ruby files |
 | `ask_user` | Ask the console user a clarifying question |
+| `execute_plan` | Run a multi-step plan with per-step confirmation |
 | `save_memory` | Persist a learned fact for future sessions |
 | `recall_memories` | Search saved memories |
 | `load_skill` | Load full instructions for a skill |
