@@ -57,6 +57,8 @@ module ConsoleAgent
         return nil
       end
 
+      __ensure_console_agent_user
+
       require 'console_agent/context_builder'
       require 'console_agent/providers/base'
       require 'console_agent/executor'
@@ -70,6 +72,8 @@ module ConsoleAgent
     end
 
     def ai!(query = nil)
+      __ensure_console_agent_user
+
       require 'console_agent/context_builder'
       require 'console_agent/providers/base'
       require 'console_agent/executor'
@@ -93,6 +97,8 @@ module ConsoleAgent
         return nil
       end
 
+      __ensure_console_agent_user
+
       require 'console_agent/context_builder'
       require 'console_agent/providers/base'
       require 'console_agent/executor'
@@ -106,6 +112,14 @@ module ConsoleAgent
     end
 
     private
+
+    def __ensure_console_agent_user
+      return if ConsoleAgent.current_user
+      $stdout.puts "\e[36mConsoleAgent logs all AI sessions for audit purposes.\e[0m"
+      $stdout.print "\e[36mPlease enter your name: \e[0m"
+      name = $stdin.gets.to_s.strip
+      ConsoleAgent.current_user = name.empty? ? ENV['USER'] : name
+    end
 
     def __console_agent_binding
       # Try IRB workspace binding

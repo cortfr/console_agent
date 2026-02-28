@@ -45,6 +45,14 @@ module ConsoleAgent
       @logger = log
     end
 
+    def current_user
+      @current_user
+    end
+
+    def current_user=(name)
+      @current_user = name
+    end
+
     def status
       c = configuration
       key = c.resolved_api_key

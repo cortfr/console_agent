@@ -68,7 +68,7 @@ module ConsoleAgent
       end
 
       def current_user_name
-        ENV['USER']
+        ConsoleAgent.current_user || ENV['USER']
       end
     end
   end
