@@ -21,14 +21,12 @@ bundle install
 rails generate console_agent:install
 ```
 
-Set your API key (pick one):
+Set your API key in the generated initializer (`config/initializers/console_agent.rb`):
 
-```bash
-# Option A: environment variable
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Option B: in the initializer
-# config.api_key = 'sk-ant-...'
+```ruby
+ConsoleAgent.configure do |config|
+  config.api_key = 'sk-ant-...'
+end
 ```
 
 Open a console and go:
