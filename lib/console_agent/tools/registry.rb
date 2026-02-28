@@ -6,9 +6,10 @@ module ConsoleAgent
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory execute_plan].freeze
 
-      def initialize
+      def initialize(executor: nil)
+        @executor = executor
         @definitions = []
         @handlers = {}
         @cache = {}
@@ -180,6 +181,7 @@ module ConsoleAgent
         )
 
         register_memory_tools
+        register_execute_plan
       end
 
       def register_memory_tools
@@ -230,6 +232,142 @@ module ConsoleAgent
           },
           handler: ->(args) { memory.recall_memories(query: args['query'], tag: args['tag']) }
         )
+      end
+
+      def register_execute_plan
+        return unless @executor
+
+        register(
+          name: 'execute_plan',
+          description: 'Execute a multi-step plan. Each step has a description and Ruby code. The plan is shown to the user for approval, then each step is executed in order. After each step executes, its return value is stored as step1, step2, etc. Use these variables in later steps to reference earlier results (e.g. `token = step1`).',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'steps' => {
+                'type' => 'array',
+                'description' => 'Ordered list of steps to execute',
+                'items' => {
+                  'type' => 'object',
+                  'properties' => {
+                    'description' => { 'type' => 'string', 'description' => 'What this step does' },
+                    'code' => { 'type' => 'string', 'description' => 'Ruby code to execute' }
+                  },
+                  'required' => %w[description code]
+                }
+              }
+            },
+            'required' => ['steps']
+          },
+          handler: ->(args) { execute_plan(args['steps'] || []) }
+        )
+      end
+
+      def execute_plan(steps)
+        return 'No steps provided.' if steps.nil? || steps.empty?
+
+        auto = ConsoleAgent.configuration.auto_execute
+
+        # Display full plan
+        $stdout.puts
+        $stdout.puts "\e[36m  Plan (#{steps.length} steps):\e[0m"
+        steps.each_with_index do |step, i|
+          $stdout.puts "\e[36m  #{i + 1}. #{step['description']}\e[0m"
+          $stdout.puts highlight_plan_code(step['code'])
+        end
+        $stdout.puts
+
+        # Ask for plan approval (unless auto-execute)
+        unless auto
+          $stdout.print "\e[33m  Accept plan? [y/N] \e[0m"
+          answer = $stdin.gets.to_s.strip.downcase
+          unless answer == 'y' || answer == 'yes'
+            $stdout.puts "\e[33m  Plan declined.\e[0m"
+            return 'User declined the plan.'
+          end
+        end
+
+        # Execute steps one by one
+        results = []
+        steps.each_with_index do |step, i|
+          $stdout.puts
+          $stdout.puts "\e[36m  Step #{i + 1}/#{steps.length}: #{step['description']}\e[0m"
+          $stdout.puts "\e[33m  # Code:\e[0m"
+          $stdout.puts highlight_plan_code(step['code'])
+
+          # Per-step confirmation (unless auto-execute)
+          unless auto
+            $stdout.print "\e[33m  Run? [y/N/edit] \e[0m"
+            step_answer = $stdin.gets.to_s.strip.downcase
+
+            case step_answer
+            when 'e', 'edit'
+              edited = edit_step_code(step['code'])
+              if edited && edited != step['code']
+                $stdout.puts "\e[33m  # Edited code:\e[0m"
+                $stdout.puts highlight_plan_code(edited)
+                $stdout.print "\e[33m  Run edited code? [y/N] \e[0m"
+                confirm = $stdin.gets.to_s.strip.downcase
+                unless confirm == 'y' || confirm == 'yes'
+                  results << "Step #{i + 1}: User declined after edit."
+                  break
+                end
+                step['code'] = edited
+              end
+            when 'y', 'yes'
+              # proceed
+            else
+              results << "Step #{i + 1}: User declined."
+              break
+            end
+          end
+
+          exec_result = @executor.execute(step['code'])
+          # Make result available as step1, step2, etc. for subsequent steps
+          @executor.binding_context.local_variable_set(:"step#{i + 1}", exec_result)
+          output = @executor.last_output
+
+          step_report = "Step #{i + 1} (#{step['description']}):\n"
+          if output && !output.strip.empty?
+            step_report += "Output: #{output.strip}\n"
+          end
+          step_report += "Return value: #{exec_result.inspect}"
+          results << step_report
+        end
+
+        results.join("\n\n")
+      end
+
+      def highlight_plan_code(code)
+        if coderay_available?
+          CodeRay.scan(code, :ruby).terminal.gsub(/^/, '     ')
+        else
+          code.split("\n").map { |l| "     \e[37m#{l}\e[0m" }.join("\n")
+        end
+      end
+
+      def edit_step_code(code)
+        require 'tempfile'
+        editor = ENV['EDITOR'] || 'vi'
+        tmpfile = Tempfile.new(['console_agent_step', '.rb'])
+        tmpfile.write(code)
+        tmpfile.flush
+        system("#{editor} #{tmpfile.path}")
+        File.read(tmpfile.path).strip
+      rescue => e
+        $stderr.puts "\e[31m  Editor error: #{e.message}\e[0m"
+        code
+      ensure
+        tmpfile.close! if tmpfile
+      end
+
+      def coderay_available?
+        return @coderay_available unless @coderay_available.nil?
+        @coderay_available = begin
+          require 'coderay'
+          true
+        rescue LoadError
+          false
+        end
       end
 
       def ask_user(question)

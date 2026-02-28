@@ -238,7 +238,7 @@ module ConsoleAgent
 
     def send_query_with_tools(messages)
       require 'console_agent/tools/registry'
-      tools = Tools::Registry.new
+      tools = Tools::Registry.new(executor: @executor)
       max_rounds = ConsoleAgent.configuration.max_tool_rounds
       total_input = 0
       total_output = 0
@@ -270,8 +270,8 @@ module ConsoleAgent
 
         # Execute each tool and show progress
         result.tool_calls.each do |tc|
-          # ask_user handles its own display (prompt + input)
-          if tc[:name] == 'ask_user'
+          # ask_user and execute_plan handle their own display
+          if tc[:name] == 'ask_user' || tc[:name] == 'execute_plan'
             tool_result = tools.execute(tc[:name], tc[:arguments])
           else
             args_display = format_tool_args(tc[:name], tc[:arguments])
@@ -335,6 +335,9 @@ module ConsoleAgent
         "(\"#{args['name']}\")"
       when 'recall_memories'
         args['query'] ? "(\"#{args['query']}\")" : ''
+      when 'execute_plan'
+        steps = args['steps']
+        steps ? "(#{steps.length} steps)" : ''
       else
         ''
       end
@@ -389,6 +392,9 @@ module ConsoleAgent
       when 'recall_memories'
         chunks = result.split("\n\n")
         chunks.length > 1 ? "#{chunks.length} memories found" : truncate(result, 80)
+      when 'execute_plan'
+        steps_done = result.scan(/^Step \d+/).length
+        steps_done > 0 ? "#{steps_done} steps executed" : truncate(result, 80)
       else
         truncate(result, 80)
       end
