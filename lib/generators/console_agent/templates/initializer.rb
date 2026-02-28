@@ -27,7 +27,7 @@ ConsoleAgent.configure do |config|
   # config.debug = true
 
   # Session logging: persist AI sessions to the database
-  # Requires running: rails generate console_agent:install_migrations && rails db:migrate
+  # Run ConsoleAgent.setup! in the Rails console to create the table
   config.session_logging = true
 
   # Database connection for ConsoleAgent tables (default: ActiveRecord::Base)

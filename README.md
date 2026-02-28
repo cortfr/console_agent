@@ -32,7 +32,7 @@ ConsoleAgent.setup!
 # => ConsoleAgent: created console_agent_sessions table.
 ```
 
-Run `ConsoleAgent.setup!` again after upgrading — it will apply any new migrations automatically.
+To reset the table (e.g. after upgrading), run `ConsoleAgent.teardown!` then `ConsoleAgent.setup!`.
 
 ## Usage
 
