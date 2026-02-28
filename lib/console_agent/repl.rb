@@ -15,17 +15,37 @@ module ConsoleAgent
     end
 
     def one_shot(query)
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       result = send_query(query)
       track_usage(result)
       code = @executor.display_response(result.text)
       display_usage(result)
-      return nil if code.nil? || code.strip.empty?
 
-      if ConsoleAgent.configuration.auto_execute
-        @executor.execute(code)
-      else
-        @executor.confirm_and_execute(code)
+      exec_result = nil
+      executed = false
+      has_code = code && !code.strip.empty?
+
+      if has_code
+        exec_result = if ConsoleAgent.configuration.auto_execute
+                        @executor.execute(code)
+                      else
+                        @executor.confirm_and_execute(code)
+                      end
+        executed = !@executor.last_cancelled?
       end
+
+      log_session(
+        query: query,
+        conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
+        mode: 'one_shot',
+        code_executed: has_code ? code : nil,
+        code_output: executed ? @executor.last_output : nil,
+        code_result: executed && exec_result ? exec_result.inspect : nil,
+        executed: executed,
+        start_time: start_time
+      )
+
+      exec_result
     rescue Providers::ProviderError => e
       $stderr.puts "\e[31mConsoleAgent Error: #{e.message}\e[0m"
       nil
@@ -35,10 +55,20 @@ module ConsoleAgent
     end
 
     def explain(query)
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       result = send_query(query)
       track_usage(result)
       @executor.display_response(result.text)
       display_usage(result)
+
+      log_session(
+        query: query,
+        conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
+        mode: 'explain',
+        executed: false,
+        start_time: start_time
+      )
+
       nil
     rescue Providers::ProviderError => e
       $stderr.puts "\e[31mConsoleAgent Error: #{e.message}\e[0m"
@@ -49,10 +79,16 @@ module ConsoleAgent
     end
 
     def interactive
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       $stdout.puts "\e[36mConsoleAgent interactive mode. Type 'exit' or 'quit' to leave.\e[0m"
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @interactive_query = nil
+      @last_interactive_code = nil
+      @last_interactive_output = nil
+      @last_interactive_result = nil
+      @last_interactive_executed = false
 
       loop do
         input = Readline.readline("\e[33mai> \e[0m", false)
@@ -65,6 +101,7 @@ module ConsoleAgent
         # Add to Readline history (avoid consecutive duplicates)
         Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
 
+        @interactive_query ||= input
         @history << { role: :user, content: input }
 
         begin
@@ -86,6 +123,13 @@ module ConsoleAgent
             exec_result = @executor.execute(code)
           else
             exec_result = @executor.confirm_and_execute(code)
+          end
+
+          unless @executor.last_cancelled?
+            @last_interactive_code = code
+            @last_interactive_output = @executor.last_output
+            @last_interactive_result = exec_result ? exec_result.inspect : nil
+            @last_interactive_executed = true
           end
 
           if @executor.last_cancelled?
@@ -112,11 +156,34 @@ module ConsoleAgent
         end
       end
 
+      log_session(
+        query: @interactive_query || '(interactive session)',
+        conversation: @history,
+        mode: 'interactive',
+        code_executed: @last_interactive_code,
+        code_output: @last_interactive_output,
+        code_result: @last_interactive_result,
+        executed: @last_interactive_executed,
+        start_time: start_time
+      )
+
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue Interrupt
       # Ctrl-C during Readline input — exit cleanly
       $stdout.puts
+
+      log_session(
+        query: @interactive_query || '(interactive session)',
+        conversation: @history,
+        mode: 'interactive',
+        code_executed: @last_interactive_code,
+        code_output: @last_interactive_output,
+        code_result: @last_interactive_result,
+        executed: @last_interactive_executed,
+        start_time: start_time
+      )
+
       display_session_summary
       $stdout.puts "\e[36mLeft ConsoleAgent interactive mode.\e[0m"
     rescue => e
@@ -331,6 +398,21 @@ module ConsoleAgent
       end
 
       $stdout.puts line
+    end
+
+    def log_session(attrs)
+      require 'console_agent/session_logger'
+      start_time = attrs.delete(:start_time)
+      duration_ms = if start_time
+                      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
+                    end
+      SessionLogger.log(
+        attrs.merge(
+          input_tokens: @total_input_tokens,
+          output_tokens: @total_output_tokens,
+          duration_ms: duration_ms
+        )
+      )
     end
 
     def display_session_summary

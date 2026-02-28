@@ -19,6 +19,8 @@ Run the install generator:
 ```bash
 bundle install
 rails generate console_agent:install
+rails generate console_agent:install_migrations
+rails db:migrate
 ```
 
 Set your API key in the generated initializer (`config/initializers/console_agent.rb`):
@@ -144,6 +146,13 @@ ConsoleAgent.configure do |config|
 
   # Debug mode: prints full API requests/responses and tool calls
   # config.debug = true
+
+  # Session logging: persist AI sessions to the database
+  config.session_logging = true
+
+  # Admin UI credentials (nil = no auth required)
+  # config.admin_username = 'admin'
+  # config.admin_password = 'changeme'
 end
 ```
 
@@ -290,6 +299,52 @@ ConsoleAgent.configure do |config|
   config.skills_enabled = false
 end
 ```
+
+## Session Logging & Admin UI
+
+ConsoleAgent can log every AI session to a database table and provide a web UI to browse them.
+
+### Setup
+
+Run the migration generator and migrate:
+
+```bash
+rails generate console_agent:install_migrations
+rails db:migrate
+```
+
+Mount the admin engine in your `config/routes.rb`:
+
+```ruby
+mount ConsoleAgent::Engine => '/console_agent'
+```
+
+That's it. Every `ai`, `ai!`, and `ai?` call will now be recorded with the query, full conversation, token usage, executed code, and output.
+
+### Admin UI
+
+Visit `/console_agent` to browse sessions. The index shows recent sessions with timestamps, user, query, mode, token counts, and duration. Click any row to see the full conversation thread and execution results.
+
+### Authentication
+
+By default, no authentication is required (convenient for development). To add HTTP basic auth:
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.admin_username = 'admin'
+  config.admin_password = 'changeme'
+end
+```
+
+### Disabling Session Logging
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.session_logging = false
+end
+```
+
+Session logging degrades gracefully — if the table doesn't exist or the database is unavailable, ConsoleAgent continues working normally without logging.
 
 ## Providers
 

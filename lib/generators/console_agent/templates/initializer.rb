@@ -30,4 +30,17 @@ ConsoleAgent.configure do |config|
 
   # Debug mode: prints full API requests/responses and tool calls to stderr
   # config.debug = true
+
+  # Session logging: persist AI sessions to the database
+  # Requires running: rails generate console_agent:install_migrations && rails db:migrate
+  config.session_logging = true
+
+  # Database connection for ConsoleAgent tables (default: ActiveRecord::Base)
+  # Set to a class that responds to .connection if tables live on a different DB
+  # config.connection_class = Sharding::CentralizedModel
+
+  # Admin UI credentials (mount ConsoleAgent::Engine => '/console_agent' in routes.rb)
+  # When nil, no authentication is required (convenient for development)
+  # config.admin_username = 'admin'
+  # config.admin_password = 'changeme'
 end

@@ -1,0 +1,24 @@
+class CreateConsoleAgentSessions < ActiveRecord::Migration<%= "[#{ActiveRecord::Migration.current_version}]" rescue "[5.0]" %>
+  def change
+    create_table :console_agent_sessions do |t|
+      t.text    :query,         null: false
+      t.text    :conversation,  null: false
+      t.integer :input_tokens,  default: 0
+      t.integer :output_tokens, default: 0
+      t.string  :user_name,     limit: 255
+      t.string  :mode,          limit: 20, null: false
+      t.text    :code_executed
+      t.text    :code_output
+      t.text    :code_result
+      t.boolean :executed,      default: false
+      t.string  :provider,      limit: 50
+      t.string  :model,         limit: 100
+      t.integer :duration_ms
+
+      t.datetime :created_at,   null: false
+    end
+
+    add_index :console_agent_sessions, :created_at
+    add_index :console_agent_sessions, :user_name
+  end
+end

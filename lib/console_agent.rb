@@ -73,4 +73,7 @@ module ConsoleAgent
   end
 end
 
-require 'console_agent/railtie' if defined?(Rails::Railtie)
+if defined?(Rails::Railtie)
+  require 'console_agent/railtie'
+  require 'console_agent/engine'
+end
