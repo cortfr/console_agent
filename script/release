@@ -4,7 +4,7 @@ set -e
 VERSION_FILE="lib/console_agent/version.rb"
 GEMSPEC="console_agent.gemspec"
 
-current_version=$(grep -oP "'\K[0-9]+\.[0-9]+\.[0-9]+" "$VERSION_FILE")
+current_version=$(sed -n "s/.*VERSION = '\([0-9]*\.[0-9]*\.[0-9]*\)'.*/\1/p" "$VERSION_FILE")
 IFS='.' read -r major minor patch <<< "$current_version"
 
 echo "Current version: $current_version"
