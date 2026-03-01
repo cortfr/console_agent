@@ -229,6 +229,75 @@ RSpec.describe ConsoleAgent::Repl do
     end
   end
 
+  describe 'direct execution with > prefix' do
+    it 'executes code directly and adds result to history' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? '> 1 + 1' : nil
+      end
+
+      output = capture_stdout { repl.interactive }
+
+      history = repl.instance_variable_get(:@history)
+      expect(history.length).to eq(1)
+      expect(history.first[:role]).to eq(:user)
+      expect(history.first[:content]).to include('User directly executed code')
+      expect(history.first[:content]).to include('1 + 1')
+      expect(history.first[:content]).to include('Return value: 2')
+    end
+
+    it 'does not call the provider' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? '> 1 + 1' : nil
+      end
+
+      expect(mock_provider).not_to receive(:chat_with_tools)
+
+      capture_stdout { repl.interactive }
+    end
+
+    it 'works without a space after >' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? '>1 + 1' : nil
+      end
+
+      expect(mock_provider).not_to receive(:chat_with_tools)
+
+      capture_stdout { repl.interactive }
+
+      history = repl.instance_variable_get(:@history)
+      expect(history.first[:content]).to include('Return value: 2')
+    end
+
+    it 'does not treat >= as direct execution' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? '>= 5' : nil
+      end
+
+      stub_no_tools(chat_result("Here:\n```ruby\n5\n```"))
+      allow($stdin).to receive(:gets).and_return("n\n")
+
+      capture_stdout { repl.interactive }
+
+      expect(mock_provider).to have_received(:chat_with_tools)
+    end
+  end
+
   describe '#resume' do
     let(:mock_session) do
       double('Session',

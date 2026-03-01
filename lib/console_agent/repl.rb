@@ -146,7 +146,7 @@ module ConsoleAgent
       name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
       # Write banner to real stdout (bypass TeeIO) so it doesn't accumulate on resume
       @interactive_old_stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
-      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage | /name <label>\e[0m"
+      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /name <label>\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -196,6 +196,35 @@ module ConsoleAgent
             end
             @interactive_old_stdout.puts "\e[36m  Session named: #{name}\e[0m"
           end
+          next
+        end
+
+        # Direct code execution with ">" prefix — skip LLM entirely
+        if input.start_with?('>') && !input.start_with?('>=')
+          raw_code = input.sub(/\A>\s?/, '')
+          Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
+          @interactive_console_capture.write("ai> #{input}\n")
+
+          exec_result = @executor.execute(raw_code)
+
+          output_parts = []
+          output_parts << "Output:\n#{@executor.last_output.strip}" if @executor.last_output && !@executor.last_output.strip.empty?
+          output_parts << "Return value: #{exec_result.inspect}" if exec_result
+
+          result_str = output_parts.join("\n\n")
+          result_str = result_str[0..1000] + '...' if result_str.length > 1000
+
+          context_msg = "User directly executed code: `#{raw_code}`"
+          context_msg += "\n#{result_str}" unless output_parts.empty?
+          @history << { role: :user, content: context_msg }
+
+          @interactive_query ||= input
+          @last_interactive_code = raw_code
+          @last_interactive_output = @executor.last_output
+          @last_interactive_result = exec_result ? exec_result.inspect : nil
+          @last_interactive_executed = true
+
+          log_interactive_turn
           next
         end
 
