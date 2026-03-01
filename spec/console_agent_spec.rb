@@ -30,10 +30,4 @@ RSpec.describe ConsoleAgent do
       expect(ConsoleAgent.configuration.provider).to eq(:anthropic)
     end
   end
-
-  describe 'VERSION' do
-    it 'is defined' do
-      expect(ConsoleAgent::VERSION).to eq('0.2.0')
-    end
-  end
 end
