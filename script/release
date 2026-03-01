@@ -1,0 +1,79 @@
+#!/bin/bash
+set -e
+
+VERSION_FILE="lib/console_agent/version.rb"
+GEMSPEC="console_agent.gemspec"
+
+current_version=$(grep -oP "'\K[0-9]+\.[0-9]+\.[0-9]+" "$VERSION_FILE")
+IFS='.' read -r major minor patch <<< "$current_version"
+
+echo "Current version: $current_version"
+echo ""
+echo "Bump which part?"
+echo "  1) patch  → $major.$minor.$((patch + 1))"
+echo "  2) minor  → $major.$((minor + 1)).0"
+echo "  3) major  → $((major + 1)).0.0"
+echo "  4) custom"
+echo ""
+read -rp "Choice [1]: " choice
+choice=${choice:-1}
+
+case $choice in
+  1) new_version="$major.$minor.$((patch + 1))" ;;
+  2) new_version="$major.$((minor + 1)).0" ;;
+  3) new_version="$((major + 1)).0.0" ;;
+  4) read -rp "Enter version: " new_version ;;
+  *) echo "Invalid choice"; exit 1 ;;
+esac
+
+echo ""
+echo "  $current_version → $new_version"
+echo ""
+read -rp "Proceed? [y/N] " confirm
+[[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
+
+# Update version file
+sed -i '' "s/VERSION = '${current_version}'/VERSION = '${new_version}'/" "$VERSION_FILE"
+echo "Updated $VERSION_FILE"
+
+# Run tests
+echo ""
+echo "Running tests..."
+bundle exec rspec --format progress
+echo "Tests passed."
+
+# Build gem
+echo ""
+gem_file="console_agent-${new_version}.gem"
+gem build "$GEMSPEC"
+echo "Built $gem_file"
+
+# Push gem
+echo ""
+read -rp "Push $gem_file to RubyGems? [y/N] " push_confirm
+if [[ "$push_confirm" =~ ^[Yy]$ ]]; then
+  gem push "$gem_file"
+  echo "Pushed to RubyGems."
+else
+  echo "Skipped gem push."
+fi
+
+# Git commit, tag, push
+echo ""
+read -rp "Commit, tag v${new_version}, and push? [y/N] " git_confirm
+if [[ "$git_confirm" =~ ^[Yy]$ ]]; then
+  git add "$VERSION_FILE"
+  git commit -m "v${new_version}"
+  git tag "v${new_version}"
+  git push
+  git push --tags
+  echo "Committed, tagged v${new_version}, and pushed."
+else
+  echo "Skipped git operations."
+fi
+
+# Clean up gem file
+rm -f "$gem_file"
+
+echo ""
+echo "Done! Released v${new_version}"
