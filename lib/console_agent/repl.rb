@@ -106,16 +106,16 @@ module ConsoleAgent
       @total_input_tokens = session.input_tokens || 0
       @total_output_tokens = session.output_tokens || 0
 
-      # Replay stored console output so the user sees previous context
-      if session.console_output && !session.console_output.strip.empty?
-        $stdout.puts "\e[2m--- Replaying previous session output ---\e[0m"
-        $stdout.puts session.console_output
-        $stdout.puts "\e[2m--- End of previous output ---\e[0m"
-        $stdout.puts
-      end
-
-      # Copy replayed output into the capture buffer so it's preserved on save
+      # Seed the capture buffer with previous output so it's preserved on save
       @interactive_console_capture.write(session.console_output.to_s)
+
+      # Replay to the user via the real stdout (bypass TeeIO to avoid double-capture)
+      if session.console_output && !session.console_output.strip.empty?
+        @interactive_old_stdout.puts "\e[2m--- Replaying previous session output ---\e[0m"
+        @interactive_old_stdout.puts session.console_output
+        @interactive_old_stdout.puts "\e[2m--- End of previous output ---\e[0m"
+        @interactive_old_stdout.puts
+      end
 
       interactive_loop
     end
@@ -144,8 +144,9 @@ module ConsoleAgent
     def interactive_loop
       auto = ConsoleAgent.configuration.auto_execute
       name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
-      $stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
-      $stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage | /name <label>\e[0m"
+      # Write banner to real stdout (bypass TeeIO) so it doesn't accumulate on resume
+      @interactive_old_stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
+      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | /usage | /name <label>\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -163,7 +164,7 @@ module ConsoleAgent
         if input == '/auto'
           ConsoleAgent.configuration.auto_execute = !ConsoleAgent.configuration.auto_execute
           mode = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
-          $stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
+          @interactive_old_stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
           next
         end
 
@@ -175,7 +176,7 @@ module ConsoleAgent
         if input == '/debug'
           ConsoleAgent.configuration.debug = !ConsoleAgent.configuration.debug
           mode = ConsoleAgent.configuration.debug ? 'ON' : 'OFF'
-          $stdout.puts "\e[36m  Debug: #{mode}\e[0m"
+          @interactive_old_stdout.puts "\e[36m  Debug: #{mode}\e[0m"
           next
         end
 
@@ -183,9 +184,9 @@ module ConsoleAgent
           name = input.sub('/name', '').strip
           if name.empty?
             if @interactive_session_name
-              $stdout.puts "\e[36m  Session name: #{@interactive_session_name}\e[0m"
+              @interactive_old_stdout.puts "\e[36m  Session name: #{@interactive_session_name}\e[0m"
             else
-              $stdout.puts "\e[33m  Usage: /name <label>  (e.g. /name salesforce_user_123)\e[0m"
+              @interactive_old_stdout.puts "\e[33m  Usage: /name <label>  (e.g. /name salesforce_user_123)\e[0m"
             end
           else
             @interactive_session_name = name
@@ -193,7 +194,7 @@ module ConsoleAgent
               require 'console_agent/session_logger'
               SessionLogger.update(@interactive_session_id, name: name)
             end
-            $stdout.puts "\e[36m  Session named: #{name}\e[0m"
+            @interactive_old_stdout.puts "\e[36m  Session named: #{name}\e[0m"
           end
           next
         end

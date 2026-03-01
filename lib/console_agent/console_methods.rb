@@ -84,7 +84,7 @@ module ConsoleAgent
       nil
     end
 
-    def ai_resume(identifier)
+    def ai_resume(identifier = nil)
       __ensure_console_agent_user
 
       require 'console_agent/context_builder'
@@ -93,9 +93,16 @@ module ConsoleAgent
       require 'console_agent/repl'
       require 'console_agent/session_logger'
 
-      session = __find_session(identifier)
+      session = if identifier
+                  __find_session(identifier)
+                else
+                  session_class = Object.const_get('ConsoleAgent::Session')
+                  session_class.where(mode: 'interactive', user_name: ConsoleAgent.current_user).recent.first
+                end
+
       unless session
-        $stderr.puts "\e[31mSession not found: #{identifier}\e[0m"
+        msg = identifier ? "Session not found: #{identifier}" : "No interactive sessions found."
+        $stderr.puts "\e[31m#{msg}\e[0m"
         return nil
       end
 
