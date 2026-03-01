@@ -143,6 +143,22 @@ RSpec.describe 'execute_plan tool' do
       expect(result).to include('Return value: 12')
     end
 
+    it 'auto-accepts the single step when plan has only one step and user answers y' do
+      one_step = {
+        'steps' => [
+          { 'description' => 'Add two numbers', 'code' => '1 + 1' }
+        ]
+      }
+
+      # Only one stdin read: "y" for plan approval, no per-step prompt
+      allow($stdin).to receive(:gets).and_return("y\n")
+
+      result = registry.execute('execute_plan', one_step)
+
+      expect(result).to include('Step 1 (Add two numbers)')
+      expect(result).to include('Return value: 2')
+    end
+
     it 'runs all steps without per-step prompts when user answers auto' do
       # Only one stdin read: "a" for plan approval, no per-step prompts
       allow($stdin).to receive(:gets).and_return("a\n")

@@ -285,7 +285,7 @@ module ConsoleAgent
           when 'a', 'auto'
             skip_confirmations = true
           when 'y', 'yes'
-            # proceed with per-step confirmation
+            skip_confirmations = true if steps.length == 1
           else
             $stdout.puts "\e[33m  Plan declined.\e[0m"
             feedback = ask_feedback("What would you like changed?")
