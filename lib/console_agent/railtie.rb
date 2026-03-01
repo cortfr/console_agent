@@ -15,7 +15,7 @@ module ConsoleAgent
 
       # Welcome message
       if $stdout.respond_to?(:tty?) && $stdout.tty?
-        $stdout.puts "\e[36m[ConsoleAgent] AI assistant loaded. Try: ai \"show me all tables\"\e[0m"
+        $stdout.puts "\e[36m[ConsoleAgent v#{ConsoleAgent::VERSION}] AI assistant loaded. Try: ai \"show me all tables\"\e[0m"
       end
 
       # Pre-build context in background

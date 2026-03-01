@@ -547,8 +547,12 @@ module ConsoleAgent
         lines = result.split("\n")
         "#{lines.length} files"
       when 'read_file'
-        lines = result.split("\n")
-        "#{lines.length} lines"
+        if result =~ /^Lines (\d+)-(\d+) of (\d+):/
+          "lines #{$1}-#{$2} of #{$3}"
+        else
+          lines = result.split("\n")
+          "#{lines.length} lines"
+        end
       when 'search_code'
         if result.start_with?('Found')
           result.split("\n").first

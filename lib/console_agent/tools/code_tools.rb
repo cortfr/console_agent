@@ -1,7 +1,7 @@
 module ConsoleAgent
   module Tools
     class CodeTools
-      MAX_FILE_LINES = 200
+      MAX_FILE_LINES = 500
       MAX_LIST_ENTRIES = 100
       MAX_SEARCH_RESULTS = 50
 
@@ -28,7 +28,7 @@ module ConsoleAgent
         "Error listing files: #{e.message}"
       end
 
-      def read_file(path)
+      def read_file(path, start_line: nil, end_line: nil)
         return "Error: path is required." if path.nil? || path.strip.empty?
 
         root = rails_root
@@ -45,12 +45,24 @@ module ConsoleAgent
         return "File '#{path}' not found." unless File.exist?(full_path)
         return "Error: '#{path}' is a directory, not a file." if File.directory?(full_path)
 
-        lines = File.readlines(full_path)
-        if lines.length > MAX_FILE_LINES
-          numbered = lines.first(MAX_FILE_LINES).each_with_index.map { |line, i| "#{i + 1}: #{line}" }
-          numbered.join + "\n... truncated (#{lines.length} total lines, showing first #{MAX_FILE_LINES})"
+        all_lines = File.readlines(full_path)
+        total = all_lines.length
+
+        # Apply line range if specified (1-based, inclusive)
+        if start_line || end_line
+          s = [(start_line || 1).to_i, 1].max
+          e = [(end_line || total).to_i, total].min
+          return "Error: start_line (#{s}) is beyond end of file (#{total} lines)." if s > total
+          lines = all_lines[(s - 1)..(e - 1)] || []
+          offset = s - 1
+          numbered = lines.each_with_index.map { |line, i| "#{offset + i + 1}: #{line}" }
+          header = "Lines #{s}-#{[e, s + lines.length - 1].min} of #{total}:\n"
+          header + numbered.join
+        elsif total > MAX_FILE_LINES
+          numbered = all_lines.first(MAX_FILE_LINES).each_with_index.map { |line, i| "#{i + 1}: #{line}" }
+          numbered.join + "\n... truncated (#{total} total lines, showing first #{MAX_FILE_LINES}). Use start_line/end_line to read specific sections."
         else
-          lines.each_with_index.map { |line, i| "#{i + 1}: #{line}" }.join
+          all_lines.each_with_index.map { |line, i| "#{i + 1}: #{line}" }.join
         end
       rescue => e
         "Error reading file '#{path}': #{e.message}"

@@ -142,15 +142,17 @@ module ConsoleAgent
 
         register(
           name: 'read_file',
-          description: 'Read the contents of a file in this Rails app. Capped at 200 lines.',
+          description: 'Read the contents of a file in this Rails app. Returns up to 500 lines by default. Use start_line/end_line to read specific sections of large files.',
           parameters: {
             'type' => 'object',
             'properties' => {
-              'path' => { 'type' => 'string', 'description' => 'Relative file path (e.g. "app/models/user.rb")' }
+              'path' => { 'type' => 'string', 'description' => 'Relative file path (e.g. "app/models/user.rb")' },
+              'start_line' => { 'type' => 'integer', 'description' => 'First line to read (1-based). Optional — omit to start from beginning.' },
+              'end_line' => { 'type' => 'integer', 'description' => 'Last line to read (1-based, inclusive). Optional — omit to read to end.' }
             },
             'required' => ['path']
           },
-          handler: ->(args) { code.read_file(args['path']) }
+          handler: ->(args) { code.read_file(args['path'], start_line: args['start_line'], end_line: args['end_line']) }
         )
 
         register(
