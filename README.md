@@ -117,7 +117,7 @@ Next time, it already knows — no re-reading files, fewer tokens.
 ```
 irb> ai!
 ConsoleAgent interactive mode. Type 'exit' to leave.
-  Auto-execute: OFF (Shift-Tab or /auto to toggle)
+  Auto-execute: OFF (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /name <label>
 
 ai> show me all tables
   ...
@@ -131,6 +131,21 @@ ai> exit
 ```
 
 Toggle `/auto` to skip confirmation prompts. `/debug` shows raw API traffic. `/usage` shows token stats.
+
+### Direct Code Execution
+
+Prefix any input with `>` to run Ruby code directly — no LLM round-trip. The result is added to the conversation context, so the AI knows what happened:
+
+```
+ai> >User.count
+=> 8
+ai> how many users do I have?
+  Thinking...
+
+You have **8 users** in your database, as confirmed by the `User.count` you just ran.
+```
+
+Useful for quick checks, setting up variables, or giving the AI concrete data to work with.
 
 ### Sessions
 
