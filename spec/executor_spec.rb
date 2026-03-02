@@ -70,6 +70,24 @@ RSpec.describe ConsoleAgent::Executor do
     it 'rescues runtime errors' do
       expect(executor.execute('raise "boom"')).to be_nil
     end
+
+    it 'sets last_error on syntax error' do
+      executor.execute('def foo(')
+      expect(executor.last_error).to include('SyntaxError')
+    end
+
+    it 'sets last_error on runtime error' do
+      executor.execute('raise "boom"')
+      expect(executor.last_error).to include('RuntimeError')
+      expect(executor.last_error).to include('boom')
+    end
+
+    it 'clears last_error on successful execution' do
+      executor.execute('raise "boom"')
+      expect(executor.last_error).not_to be_nil
+      executor.execute('1 + 1')
+      expect(executor.last_error).to be_nil
+    end
   end
 
   describe '#confirm_and_execute' do

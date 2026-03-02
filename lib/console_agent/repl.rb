@@ -18,29 +18,25 @@ module ConsoleAgent
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       console_capture = StringIO.new
       exec_result = with_console_capture(console_capture) do
-        result, _ = send_query(query)
-        track_usage(result)
-        code = @executor.display_response(result.text)
-        display_usage(result)
+        conversation = [{ role: :user, content: query }]
+        exec_result, code, executed = one_shot_round(conversation)
 
-        exec_result = nil
-        executed = false
-        has_code = code && !code.strip.empty?
+        # Auto-retry once if execution errored
+        if executed && @executor.last_error
+          error_msg = "Code execution failed with error: #{@executor.last_error}"
+          error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
+          conversation << { role: :assistant, content: @_last_result_text }
+          conversation << { role: :user, content: error_msg }
 
-        if has_code
-          exec_result = if ConsoleAgent.configuration.auto_execute
-                          @executor.execute(code)
-                        else
-                          @executor.confirm_and_execute(code)
-                        end
-          executed = !@executor.last_cancelled?
+          $stdout.puts "\e[2m  Attempting to fix...\e[0m"
+          exec_result, code, executed = one_shot_round(conversation)
         end
 
         @_last_log_attrs = {
           query: query,
-          conversation: [{ role: :user, content: query }, { role: :assistant, content: result.text }],
+          conversation: conversation,
           mode: 'one_shot',
-          code_executed: has_code ? code : nil,
+          code_executed: code,
           code_output: executed ? @executor.last_output : nil,
           code_result: executed && exec_result ? exec_result.inspect : nil,
           executed: executed,
@@ -59,6 +55,31 @@ module ConsoleAgent
     rescue => e
       $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
       nil
+    end
+
+    # Executes one LLM round: send query, display, optionally execute code.
+    # Returns [exec_result, code, executed].
+    def one_shot_round(conversation)
+      result, _ = send_query(nil, conversation: conversation)
+      track_usage(result)
+      code = @executor.display_response(result.text)
+      display_usage(result)
+      @_last_result_text = result.text
+
+      exec_result = nil
+      executed = false
+      has_code = code && !code.strip.empty?
+
+      if has_code
+        exec_result = if ConsoleAgent.configuration.auto_execute
+                        @executor.execute(code)
+                      else
+                        @executor.confirm_and_execute(code)
+                      end
+        executed = !@executor.last_cancelled?
+      end
+
+      [exec_result, has_code ? code : nil, executed]
     end
 
     def explain(query)
@@ -296,61 +317,18 @@ module ConsoleAgent
         # Save immediately so the session is visible in the admin UI while the AI thinks
         log_interactive_turn
 
-        begin
-          result, tool_messages = send_query(input, conversation: @history)
-        rescue Interrupt
-          $stdout.puts "\n\e[33m  Aborted.\e[0m"
+        status = send_and_execute
+        if status == :interrupted
           @history.pop # Remove the user message that never got a response
           log_interactive_turn
           next
         end
 
-        track_usage(result)
-        code = @executor.display_response(result.text)
-        display_usage(result, show_session: true)
-
-        # Save after response is displayed so viewer shows progress before Execute prompt
-        log_interactive_turn
-
-        # Add tool call/result messages so the LLM remembers what it learned
-        @history.concat(tool_messages) if tool_messages && !tool_messages.empty?
-        @history << { role: :assistant, content: result.text }
-
-        if code && !code.strip.empty?
-          if ConsoleAgent.configuration.auto_execute
-            exec_result = @executor.execute(code)
-          else
-            exec_result = @executor.confirm_and_execute(code)
-          end
-
-          unless @executor.last_cancelled?
-            @last_interactive_code = code
-            @last_interactive_output = @executor.last_output
-            @last_interactive_result = exec_result ? exec_result.inspect : nil
-            @last_interactive_executed = true
-          end
-
-          if @executor.last_cancelled?
-            @history << { role: :user, content: "User declined to execute the code." }
-          else
-            output_parts = []
-
-            # Capture printed output (puts, print, etc.)
-            if @executor.last_output && !@executor.last_output.strip.empty?
-              output_parts << "Output:\n#{@executor.last_output.strip}"
-            end
-
-            # Capture return value
-            if exec_result
-              output_parts << "Return value: #{exec_result.inspect}"
-            end
-
-            unless output_parts.empty?
-              result_str = output_parts.join("\n\n")
-              result_str = result_str[0..1000] + '...' if result_str.length > 1000
-              @history << { role: :user, content: "Code was executed. #{result_str}" }
-            end
-          end
+        # Auto-retry once when execution fails — send error back to LLM for a fix
+        if status == :error
+          $stdout.puts "\e[2m  Attempting to fix...\e[0m"
+          log_interactive_turn
+          send_and_execute
         end
 
         # Update with the AI response, tokens, and any execution results
@@ -372,6 +350,73 @@ module ConsoleAgent
       $stdout = @interactive_old_stdout if @interactive_old_stdout
       @executor.on_prompt = nil
       $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
+    end
+
+    # Sends conversation to LLM, displays response, executes code if present.
+    # Returns :success, :error, :cancelled, :no_code, or :interrupted.
+    def send_and_execute
+      begin
+        result, tool_messages = send_query(nil, conversation: @history)
+      rescue Interrupt
+        $stdout.puts "\n\e[33m  Aborted.\e[0m"
+        return :interrupted
+      end
+
+      track_usage(result)
+      code = @executor.display_response(result.text)
+      display_usage(result, show_session: true)
+
+      # Save after response is displayed so viewer shows progress before Execute prompt
+      log_interactive_turn
+
+      # Add tool call/result messages so the LLM remembers what it learned
+      @history.concat(tool_messages) if tool_messages && !tool_messages.empty?
+      @history << { role: :assistant, content: result.text }
+
+      return :no_code unless code && !code.strip.empty?
+
+      exec_result = if ConsoleAgent.configuration.auto_execute
+                      @executor.execute(code)
+                    else
+                      @executor.confirm_and_execute(code)
+                    end
+
+      unless @executor.last_cancelled?
+        @last_interactive_code = code
+        @last_interactive_output = @executor.last_output
+        @last_interactive_result = exec_result ? exec_result.inspect : nil
+        @last_interactive_executed = true
+      end
+
+      if @executor.last_cancelled?
+        @history << { role: :user, content: "User declined to execute the code." }
+        :cancelled
+      elsif @executor.last_error
+        error_msg = "Code execution failed with error: #{@executor.last_error}"
+        error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
+        @history << { role: :user, content: error_msg }
+        :error
+      else
+        output_parts = []
+
+        # Capture printed output (puts, print, etc.)
+        if @executor.last_output && !@executor.last_output.strip.empty?
+          output_parts << "Output:\n#{@executor.last_output.strip}"
+        end
+
+        # Capture return value
+        if exec_result
+          output_parts << "Return value: #{exec_result.inspect}"
+        end
+
+        unless output_parts.empty?
+          result_str = output_parts.join("\n\n")
+          result_str = result_str[0..1000] + '...' if result_str.length > 1000
+          @history << { role: :user, content: "Code was executed. #{result_str}" }
+        end
+
+        :success
+      end
     end
 
     def provider

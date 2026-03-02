@@ -43,7 +43,7 @@ module ConsoleAgent
   class Executor
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
-    attr_reader :binding_context
+    attr_reader :binding_context, :last_error
     attr_accessor :on_prompt
 
     def initialize(binding_context)
@@ -75,6 +75,7 @@ module ConsoleAgent
     def execute(code)
       return nil if code.nil? || code.strip.empty?
 
+      @last_error = nil
       captured_output = StringIO.new
       old_stdout = $stdout
       # Tee output: capture it and also print to the real stdout
@@ -89,12 +90,14 @@ module ConsoleAgent
       result
     rescue SyntaxError => e
       $stdout = old_stdout if old_stdout
-      $stderr.puts colorize("SyntaxError: #{e.message}", :red)
+      @last_error = "SyntaxError: #{e.message}"
+      $stderr.puts colorize(@last_error, :red)
       @last_output = nil
       nil
     rescue => e
       $stdout = old_stdout if old_stdout
-      $stderr.puts colorize("Error: #{e.class}: #{e.message}", :red)
+      @last_error = "#{e.class}: #{e.message}"
+      $stderr.puts colorize("Error: #{@last_error}", :red)
       e.backtrace.first(3).each { |line| $stderr.puts colorize("  #{line}", :red) }
       @last_output = captured_output&.string
       nil

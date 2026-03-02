@@ -339,8 +339,12 @@ module ConsoleAgent
           # Make result available as step1, step2, etc. for subsequent steps
           @executor.binding_context.local_variable_set(:"step#{i + 1}", exec_result)
           output = @executor.last_output
+          error = @executor.last_error
 
           step_report = "Step #{i + 1} (#{step['description']}):\n"
+          if error
+            step_report += "ERROR: #{error}\n"
+          end
           if output && !output.strip.empty?
             step_report += "Output: #{output.strip}\n"
           end

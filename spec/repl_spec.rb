@@ -78,9 +78,9 @@ RSpec.describe ConsoleAgent::Repl do
         stop_reason: :tool_use
       )
 
-      # Second call: LLM produces final answer
+      # Second call: LLM produces final answer (use code that won't error in tests)
       final_result = ConsoleAgent::Providers::ChatResult.new(
-        text: "Here are the tables:\n```ruby\nActiveRecord::Base.connection.tables\n```",
+        text: "Here are the tables:\n```ruby\n['users', 'posts']\n```",
         input_tokens: 80,
         output_tokens: 30,
         tool_calls: [],
@@ -168,6 +168,66 @@ RSpec.describe ConsoleAgent::Repl do
 
       result = repl.one_shot('add numbers')
       expect(result).to eq(2)
+    end
+  end
+
+  describe 'error handling in interactive mode' do
+    it 'adds execution errors to conversation history and auto-retries' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      # First LLM call: returns code that will error
+      # Second LLM call (auto-retry): returns fixed code
+      error_response = chat_result("Try this:\n```ruby\nraise 'something broke'\n```")
+      fixed_response = chat_result("Fixed:\n```ruby\n42\n```")
+
+      llm_call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        llm_call_count += 1
+        llm_call_count == 1 ? error_response : fixed_response
+      end
+      allow($stdin).to receive(:gets).and_return("y\n")
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        readline_count == 1 ? 'do something' : nil
+      end
+
+      capture_stdout { repl.interactive }
+
+      # LLM was called twice: once for the original query, once for the auto-retry
+      expect(llm_call_count).to eq(2)
+
+      history = repl.instance_variable_get(:@history)
+      error_msg = history.find { |h| h[:content]&.include?('Code execution failed') }
+      expect(error_msg).not_to be_nil
+      expect(error_msg[:content]).to include('RuntimeError')
+      expect(error_msg[:content]).to include('something broke')
+    end
+
+    it 'only auto-retries once (does not loop on repeated errors)' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      # Both LLM calls return code that errors
+      stub_no_tools(chat_result("Try this:\n```ruby\nraise 'still broken'\n```"))
+      allow($stdin).to receive(:gets).and_return("y\n")
+
+      llm_call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        llm_call_count += 1
+        chat_result("Try this:\n```ruby\nraise 'still broken'\n```")
+      end
+
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        readline_count == 1 ? 'do something' : nil
+      end
+
+      capture_stdout { repl.interactive }
+
+      # Exactly 2 calls: original + one retry, no infinite loop
+      expect(llm_call_count).to eq(2)
     end
   end
 
