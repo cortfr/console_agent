@@ -114,7 +114,7 @@ module ConsoleAgent
       original_timeout = ConsoleAgent.configuration.timeout
       ConsoleAgent.configuration.timeout = [original_timeout, 120].max
 
-      result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools)
+      result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools, allow_redirect: false)
 
       guide_text = result.text.to_s.strip
       # Strip markdown code fences if the LLM wrapped the response
@@ -442,7 +442,7 @@ module ConsoleAgent
       send_query_with_tools(messages)
     end
 
-    def send_query_with_tools(messages, system_prompt: nil, tools_override: nil)
+    def send_query_with_tools(messages, system_prompt: nil, tools_override: nil, allow_redirect: true)
       require 'console_agent/tools/registry'
       tools = tools_override || Tools::Registry.new(executor: @executor)
       active_system_prompt = system_prompt || context
@@ -474,6 +474,7 @@ module ConsoleAgent
             provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
           end
         rescue Interrupt
+          raise unless allow_redirect
           redirect = prompt_for_redirect
           if redirect
             messages << { role: :user, content: redirect }
