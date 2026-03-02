@@ -130,12 +130,26 @@ module ConsoleAgent
       nil
     end
 
+    def ai_init
+      require 'console_agent/context_builder'
+      require 'console_agent/providers/base'
+      require 'console_agent/executor'
+      require 'console_agent/repl'
+
+      repl = Repl.new(__console_agent_binding)
+      repl.init_guide
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent error: #{e.message}\e[0m"
+      nil
+    end
+
     def ai(query = nil)
       if query.nil?
         $stderr.puts "\e[33mUsage: ai \"your question here\"\e[0m"
         $stderr.puts "\e[33m  ai  \"query\"  - ask + confirm execution\e[0m"
         $stderr.puts "\e[33m  ai! \"query\"  - enter interactive mode (or ai! with no args)\e[0m"
         $stderr.puts "\e[33m  ai? \"query\"  - explain only, no execution\e[0m"
+        $stderr.puts "\e[33m  ai_init      - generate/update app guide for better AI context\e[0m"
         $stderr.puts "\e[33m  ai_sessions  - list recent sessions\e[0m"
         $stderr.puts "\e[33m  ai_resume    - resume a session by name or id\e[0m"
         $stderr.puts "\e[33m  ai_name      - name a session: ai_name 42, \"my_label\"\e[0m"

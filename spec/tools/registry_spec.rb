@@ -30,6 +30,22 @@ RSpec.describe ConsoleAgent::Tools::Registry do
     end
   end
 
+  describe 'init mode' do
+    subject(:init_registry) { described_class.new(mode: :init) }
+
+    it 'registers only introspection tools' do
+      names = init_registry.definitions.map { |d| d[:name] }
+      expect(names).to include('list_tables', 'describe_table', 'list_models', 'describe_model',
+                               'list_files', 'read_file', 'search_code')
+    end
+
+    it 'excludes ask_user, memory, and execute_plan tools' do
+      names = init_registry.definitions.map { |d| d[:name] }
+      expect(names).not_to include('ask_user', 'save_memory', 'delete_memory',
+                                   'recall_memories', 'execute_plan')
+    end
+  end
+
   describe '#execute' do
     it 'returns error for unknown tool' do
       result = registry.execute('nonexistent', {})

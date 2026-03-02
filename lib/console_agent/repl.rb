@@ -90,6 +90,62 @@ module ConsoleAgent
       nil
     end
 
+    def init_guide
+      storage = ConsoleAgent.storage
+      existing_guide = begin
+        content = storage.read(ConsoleAgent::GUIDE_KEY)
+        (content && !content.strip.empty?) ? content.strip : nil
+      rescue
+        nil
+      end
+
+      if existing_guide
+        $stdout.puts "\e[36m  Existing guide found (#{existing_guide.length} chars). Will update.\e[0m"
+      else
+        $stdout.puts "\e[36m  No existing guide. Exploring the app...\e[0m"
+      end
+
+      require 'console_agent/tools/registry'
+      init_tools = Tools::Registry.new(mode: :init)
+      sys_prompt = init_system_prompt(existing_guide)
+      messages = [{ role: :user, content: "Explore this Rails application and generate the application guide." }]
+
+      # Temporarily increase timeout — init conversations are large
+      original_timeout = ConsoleAgent.configuration.timeout
+      ConsoleAgent.configuration.timeout = [original_timeout, 120].max
+
+      result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools)
+
+      guide_text = result.text.to_s.strip
+      # Strip markdown code fences if the LLM wrapped the response
+      guide_text = guide_text.sub(/\A```(?:markdown)?\s*\n?/, '').sub(/\n?```\s*\z/, '')
+      # Strip LLM preamble/thinking before the actual guide content
+      guide_text = guide_text.sub(/\A.*?(?=^#\s)/m, '') if guide_text =~ /^#\s/m
+
+      if guide_text.empty?
+        $stdout.puts "\e[33m  No guide content generated.\e[0m"
+        return nil
+      end
+
+      storage.write(ConsoleAgent::GUIDE_KEY, guide_text)
+
+      path = storage.respond_to?(:root_path) ? File.join(storage.root_path, ConsoleAgent::GUIDE_KEY) : ConsoleAgent::GUIDE_KEY
+      $stdout.puts "\e[32m  Guide saved to #{path} (#{guide_text.length} chars)\e[0m"
+      display_usage(result)
+      nil
+    rescue Interrupt
+      $stdout.puts "\n\e[33m  Interrupted.\e[0m"
+      nil
+    rescue Providers::ProviderError => e
+      $stderr.puts "\e[31mConsoleAgent Error: #{e.message}\e[0m"
+      nil
+    rescue => e
+      $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
+      nil
+    ensure
+      ConsoleAgent.configuration.timeout = original_timeout if original_timeout
+    end
+
     def interactive
       init_interactive_state
       interactive_loop
@@ -330,6 +386,50 @@ module ConsoleAgent
       @context ||= context_builder.build
     end
 
+    def init_system_prompt(existing_guide)
+      env = context_builder.environment_context
+
+      prompt = <<~PROMPT
+        You are a Rails application analyst. Your job is to explore this Rails app using the
+        available tools and produce a concise markdown guide that will be injected into future
+        AI assistant sessions.
+
+        #{env}
+
+        EXPLORATION STRATEGY — be efficient to avoid timeouts:
+        1. Start with list_models to see all models and their associations
+        2. Pick the 5-8 CORE models and call describe_model on those only
+        3. Call describe_table on only 3-5 key tables (skip tables whose models already told you enough)
+        4. Use search_code sparingly — only for specific patterns you suspect (sharding, STI, concerns)
+        5. Use read_file only when you need to understand a specific pattern (read small sections, not whole files)
+        6. Do NOT exhaustively describe every table or model — focus on what's important
+
+        IMPORTANT: Keep your total tool calls under 20. Prioritize breadth over depth.
+
+        Produce a markdown document with these sections:
+        - **Application Overview**: What the app does, key domain concepts
+        - **Key Models & Relationships**: Core models and how they relate
+        - **Data Architecture**: Important tables, notable columns, any partitioning/sharding
+        - **Important Patterns**: Custom concerns, service objects, key abstractions
+        - **Common Maintenance Tasks**: Typical console operations for this app
+        - **Gotchas**: Non-obvious behaviors, tricky associations, known quirks
+
+        Keep it concise — aim for 1-2 pages. Focus on what a console user needs to know.
+        Do NOT wrap the output in markdown code fences.
+      PROMPT
+
+      if existing_guide
+        prompt += <<~UPDATE
+
+          Here is the existing guide. Update and merge with any new findings:
+
+          #{existing_guide}
+        UPDATE
+      end
+
+      prompt.strip
+    end
+
     def send_query(query, conversation: nil)
       ConsoleAgent.configuration.validate!
 
@@ -342,25 +442,36 @@ module ConsoleAgent
       send_query_with_tools(messages)
     end
 
-    def send_query_with_tools(messages)
+    def send_query_with_tools(messages, system_prompt: nil, tools_override: nil)
       require 'console_agent/tools/registry'
-      tools = Tools::Registry.new(executor: @executor)
+      tools = tools_override || Tools::Registry.new(executor: @executor)
+      active_system_prompt = system_prompt || context
       max_rounds = ConsoleAgent.configuration.max_tool_rounds
       total_input = 0
       total_output = 0
       result = nil
       new_messages = []  # Track messages added during tool use
+      last_thinking = nil
+      last_tool_names = []
 
       exhausted = false
 
       max_rounds.times do |round|
         if round == 0
           $stdout.puts "\e[2m  Thinking...\e[0m"
+        else
+          # Show buffered thinking text before the "Calling LLM" line
+          if last_thinking
+            last_thinking.split("\n").each do |line|
+              $stdout.puts "\e[2m  #{line}\e[0m"
+            end
+          end
+          $stdout.puts "\e[2m  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}\e[0m"
         end
 
         begin
           result = with_escape_monitoring do
-            provider.chat_with_tools(messages, tools: tools, system_prompt: context)
+            provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
           end
         rescue Interrupt
           redirect = prompt_for_redirect
@@ -377,10 +488,8 @@ module ConsoleAgent
 
         break unless result.tool_use?
 
-        # Show what the LLM is thinking (if it returned text alongside tool calls)
-        if result.text && !result.text.strip.empty?
-          $stdout.puts "\e[2m  #{result.text.strip}\e[0m"
-        end
+        # Buffer thinking text for display before next LLM call
+        last_thinking = (result.text && !result.text.strip.empty?) ? result.text.strip : nil
 
         # Add assistant message with tool calls to conversation
         assistant_msg = provider.format_assistant_message(result)
@@ -388,6 +497,7 @@ module ConsoleAgent
         new_messages << assistant_msg
 
         # Execute each tool and show progress
+        last_tool_names = result.tool_calls.map { |tc| tc[:name] }
         result.tool_calls.each do |tc|
           # ask_user and execute_plan handle their own display
           if tc[:name] == 'ask_user' || tc[:name] == 'execute_plan'
@@ -419,7 +529,7 @@ module ConsoleAgent
       if exhausted
         $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: ConsoleAgent.configure { |c| c.max_tool_rounds = 200 }\e[0m"
         messages << { role: :user, content: "You've used all available tool rounds. Please provide your best answer now based on what you've learned so far." }
-        result = provider.chat(messages, system_prompt: context)
+        result = provider.chat(messages, system_prompt: active_system_prompt)
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
       end
@@ -484,6 +594,30 @@ module ConsoleAgent
       input = $stdin.gets
       return nil if input.nil? || input.strip.empty?
       input.strip
+    end
+
+    def llm_status(round, messages, tokens_so_far, last_thinking = nil, last_tool_names = [])
+      status = "Calling LLM (round #{round + 1}, #{messages.length} msgs"
+      status += ", ~#{format_tokens(tokens_so_far)} ctx" if tokens_so_far > 0
+      status += ")"
+      if !last_thinking && last_tool_names.any?
+        # Summarize tools when there's no thinking text
+        counts = last_tool_names.tally
+        summary = counts.map { |name, n| n > 1 ? "#{name} x#{n}" : name }.join(", ")
+        status += " after #{summary}"
+      end
+      status += "..."
+      status
+    end
+
+    def format_tokens(count)
+      if count >= 1_000_000
+        "#{(count / 1_000_000.0).round(1)}M"
+      elsif count >= 1_000
+        "#{(count / 1_000.0).round(1)}K"
+      else
+        count.to_s
+      end
     end
 
     def format_tool_args(name, args)

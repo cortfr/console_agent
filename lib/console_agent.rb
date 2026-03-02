@@ -2,6 +2,8 @@ require 'console_agent/version'
 require 'console_agent/configuration'
 
 module ConsoleAgent
+  GUIDE_KEY = 'console_agent.md'.freeze
+
   class << self
     def configuration
       @configuration ||= Configuration.new

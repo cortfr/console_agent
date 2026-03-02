@@ -8,8 +8,9 @@ module ConsoleAgent
       # Tools that should never be cached (side effects or user interaction)
       NO_CACHE = %w[ask_user save_memory delete_memory execute_plan].freeze
 
-      def initialize(executor: nil)
+      def initialize(executor: nil, mode: :default)
         @executor = executor
+        @mode = mode
         @definitions = []
         @handlers = {}
         @cache = {}
@@ -169,21 +170,23 @@ module ConsoleAgent
           handler: ->(args) { code.search_code(args['query'], args['directory']) }
         )
 
-        register(
-          name: 'ask_user',
-          description: 'Ask the console user a clarifying question. Use this when you need specific information to write accurate code (e.g. which user they are, which record to target, what value to use). Do NOT generate placeholder values like YOUR_USER_ID — ask instead.',
-          parameters: {
-            'type' => 'object',
-            'properties' => {
-              'question' => { 'type' => 'string', 'description' => 'The question to ask the user' }
+        unless @mode == :init
+          register(
+            name: 'ask_user',
+            description: 'Ask the console user a clarifying question. Use this when you need specific information to write accurate code (e.g. which user they are, which record to target, what value to use). Do NOT generate placeholder values like YOUR_USER_ID — ask instead.',
+            parameters: {
+              'type' => 'object',
+              'properties' => {
+                'question' => { 'type' => 'string', 'description' => 'The question to ask the user' }
+              },
+              'required' => ['question']
             },
-            'required' => ['question']
-          },
-          handler: ->(args) { ask_user(args['question']) }
-        )
+            handler: ->(args) { ask_user(args['question']) }
+          )
 
-        register_memory_tools
-        register_execute_plan
+          register_memory_tools
+          register_execute_plan
+        end
       end
 
       def register_memory_tools

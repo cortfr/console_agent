@@ -59,6 +59,7 @@ The AI calls tools behind the scenes to learn your app — schema, models, assoc
 | `ai "query"` | One-shot: ask, review code, confirm |
 | `ai! "query"` | Interactive: ask and keep chatting |
 | `ai? "query"` | Explain only, never executes |
+| `ai_init` | Generate/update app guide for better context |
 
 ### Multi-Step Plans
 
@@ -111,6 +112,30 @@ ai> how does sharding work?
 ```
 
 Next time, it already knows — no re-reading files, fewer tokens.
+
+### Application Guide
+
+Run `ai_init` to have the AI explore your app and generate a guide that gets loaded into every future conversation:
+
+```
+irb> ai_init
+  No existing guide. Exploring the app...
+  Thinking...
+  -> list_models
+     240 models
+  -> describe_model("User")
+     119 associations, 6 validations
+  -> describe_model("Account")
+     25 associations
+  -> search_code("Sharding", dir: "config")
+     Found 36 matches
+  ...
+  Guide saved to .console_agent/console_agent.md (3204 chars)
+```
+
+The guide is a markdown file covering your app's models, relationships, data architecture, and gotchas. Unlike memories (which require a tool call to recall), the guide is injected directly into the system prompt — so the AI starts every session already knowing your app.
+
+Run `ai_init` again anytime to update it.
 
 ### Interactive Mode
 

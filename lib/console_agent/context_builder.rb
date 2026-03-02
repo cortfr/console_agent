@@ -15,8 +15,30 @@ module ConsoleAgent
       parts = []
       parts << smart_system_instructions
       parts << environment_context
+      parts << guide_context
       parts << memory_context
       parts.compact.join("\n\n")
+    end
+
+    def environment_context
+      lines = ["## Environment"]
+      lines << "- Ruby #{RUBY_VERSION}"
+      lines << "- Rails #{Rails.version}" if defined?(Rails) && Rails.respond_to?(:version)
+
+      if defined?(ActiveRecord::Base) && ActiveRecord::Base.connected?
+        adapter = ActiveRecord::Base.connection.adapter_name rescue 'unknown'
+        lines << "- Database adapter: #{adapter}"
+      end
+
+      if defined?(Bundler)
+        key_gems = %w[devise cancancan pundit sidekiq delayed_job resque
+                      paperclip carrierwave activestorage shrine
+                      pg mysql2 sqlite3 mongoid]
+        loaded = key_gems.select { |g| Gem.loaded_specs.key?(g) }
+        lines << "- Key gems: #{loaded.join(', ')}" unless loaded.empty?
+      end
+
+      lines.join("\n")
     end
 
     private
@@ -67,25 +89,14 @@ module ConsoleAgent
       PROMPT
     end
 
-    def environment_context
-      lines = ["## Environment"]
-      lines << "- Ruby #{RUBY_VERSION}"
-      lines << "- Rails #{Rails.version}" if defined?(Rails) && Rails.respond_to?(:version)
+    def guide_context
+      content = ConsoleAgent.storage.read(ConsoleAgent::GUIDE_KEY)
+      return nil if content.nil? || content.strip.empty?
 
-      if defined?(ActiveRecord::Base) && ActiveRecord::Base.connected?
-        adapter = ActiveRecord::Base.connection.adapter_name rescue 'unknown'
-        lines << "- Database adapter: #{adapter}"
-      end
-
-      if defined?(Bundler)
-        key_gems = %w[devise cancancan pundit sidekiq delayed_job resque
-                      paperclip carrierwave activestorage shrine
-                      pg mysql2 sqlite3 mongoid]
-        loaded = key_gems.select { |g| Gem.loaded_specs.key?(g) }
-        lines << "- Key gems: #{loaded.join(', ')}" unless loaded.empty?
-      end
-
-      lines.join("\n")
+      "## Application Guide\n\n#{content.strip}"
+    rescue => e
+      ConsoleAgent.logger.debug("ConsoleAgent: guide context failed: #{e.message}")
+      nil
     end
 
     def memory_context
