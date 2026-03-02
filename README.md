@@ -28,11 +28,11 @@ end
 To set up session logging (OPTIONAL), create the table from the console:
 
 ```ruby
-ConsoleAgent.setup!
+ai_setup
 # => ConsoleAgent: created console_agent_sessions table.
 ```
 
-To reset the table (e.g. after upgrading), run `ConsoleAgent.teardown!` then `ConsoleAgent.setup!`.
+To reset the table (e.g. after upgrading), run `ConsoleAgent.teardown!` then `ai_setup`.
 
 ## Usage
 
@@ -60,6 +60,7 @@ The AI calls tools behind the scenes to learn your app — schema, models, assoc
 | `ai! "query"` | Interactive: ask and keep chatting |
 | `ai? "query"` | Explain only, never executes |
 | `ai_init` | Generate/update app guide for better context |
+| `ai_setup` | Install the session logging table |
 
 ### Multi-Step Plans
 
@@ -142,7 +143,7 @@ Run `ai_init` again anytime to update it.
 ```
 irb> ai!
 ConsoleAgent interactive mode. Type 'exit' to leave.
-  Auto-execute: OFF (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /name <label>
+  Auto-execute: OFF (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /compact | /name <label>
 
 ai> show me all tables
   ...
@@ -155,7 +156,13 @@ ai> delete cancelled orders older than 90 days
 ai> exit
 ```
 
-Toggle `/auto` to skip confirmation prompts. `/debug` shows raw API traffic. `/usage` shows token stats.
+| Slash command | What it does |
+|---------------|-------------|
+| `/auto` | Toggle auto-execute (skip confirmations) |
+| `/compact` | Compress conversation history into a summary |
+| `/usage` | Show token stats for the session |
+| `/debug` | Toggle raw API traffic output |
+| `/name <label>` | Name the current session for easy resume |
 
 ### Direct Code Execution
 
@@ -171,6 +178,28 @@ You have **8 users** in your database, as confirmed by the `User.count` you just
 ```
 
 Useful for quick checks, setting up variables, or giving the AI concrete data to work with.
+
+### Compacting History
+
+Long conversations accumulate large context, increasing latency and cost. Use `/compact` to compress the history into a concise summary:
+
+```
+ai> /compact
+  Compacting 34 messages (~28.5K chars)...
+  Compacted: 34 messages -> 1 summary (~28.5K -> ~1.2K chars)
+  User was investigating calendar sync failures for user 123. Found that
+  the OAuth token expired 3 days ago. Identified the refresh logic in
+  SalesforceApi#refresh_token. Last executed: token.update(active: false).
+  [tokens in: 8500 | out: 200 | total: 8700]
+```
+
+The AI summarizes what you've been working on, key findings, and current state — then replaces the full history with that summary. Follow-up questions continue naturally.
+
+When the conversation gets large, you'll see a reminder:
+
+```
+  Conversation is getting large (~50K chars). Consider running /compact to reduce context size.
+```
 
 ### Sessions
 
@@ -242,7 +271,7 @@ ConsoleAgent.configure do |config|
   config.auto_execute = false         # true to skip confirmations
   config.max_tokens = 4096             # max tokens per LLM response
   config.max_tool_rounds = 10         # max tool calls per query
-  config.session_logging = true       # log sessions to DB (run ConsoleAgent.setup!)
+  config.session_logging = true       # log sessions to DB (run ai_setup)
 end
 ```
 
