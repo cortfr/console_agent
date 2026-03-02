@@ -114,7 +114,7 @@ module ConsoleAgent
       original_timeout = ConsoleAgent.configuration.timeout
       ConsoleAgent.configuration.timeout = [original_timeout, 120].max
 
-      result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools, allow_redirect: false)
+      result, _ = send_query_with_tools(messages, system_prompt: sys_prompt, tools_override: init_tools)
 
       guide_text = result.text.to_s.strip
       # Strip markdown code fences if the LLM wrapped the response
@@ -442,7 +442,7 @@ module ConsoleAgent
       send_query_with_tools(messages)
     end
 
-    def send_query_with_tools(messages, system_prompt: nil, tools_override: nil, allow_redirect: true)
+    def send_query_with_tools(messages, system_prompt: nil, tools_override: nil)
       require 'console_agent/tools/registry'
       tools = tools_override || Tools::Registry.new(executor: @executor)
       active_system_prompt = system_prompt || context
@@ -469,20 +469,8 @@ module ConsoleAgent
           $stdout.puts "\e[2m  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}\e[0m"
         end
 
-        begin
-          result = with_escape_monitoring do
-            provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
-          end
-        rescue Interrupt
-          raise unless allow_redirect
-          redirect = prompt_for_redirect
-          if redirect
-            messages << { role: :user, content: redirect }
-            new_messages << messages.last
-            next
-          else
-            raise
-          end
+        result = with_escape_monitoring do
+          provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
@@ -588,14 +576,6 @@ module ConsoleAgent
       end
     end
 
-    def prompt_for_redirect
-      $stdout.puts "\n\e[33m  Interrupted. What should the AI do differently?\e[0m"
-      $stdout.puts "\e[2m  (Press Enter with no input to abort entirely)\e[0m"
-      $stdout.print "\e[33m  redirect> \e[0m"
-      input = $stdin.gets
-      return nil if input.nil? || input.strip.empty?
-      input.strip
-    end
 
     def llm_status(round, messages, tokens_so_far, last_thinking = nil, last_tool_names = [])
       status = "Calling LLM (round #{round + 1}, #{messages.length} msgs"
