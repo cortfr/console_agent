@@ -19,7 +19,8 @@ module ConsoleAgent
                   :timeout, :debug, :max_tool_rounds,
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
-                  :admin_username, :admin_password
+                  :admin_username, :admin_password,
+                  :authenticate
 
     def initialize
       @provider     = :anthropic
@@ -38,6 +39,7 @@ module ConsoleAgent
       @connection_class = nil
       @admin_username   = nil
       @admin_password   = nil
+      @authenticate     = nil
     end
 
     def resolved_api_key

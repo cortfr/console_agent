@@ -111,6 +111,36 @@ end
 
 The default model is `claude-sonnet-4-6` (Anthropic) or `gpt-5.3-codex` (OpenAI). The thinking model defaults to `claude-opus-4-6` and is activated via `/think` or by saying "think harder".
 
+## Web UI Authentication
+
+The engine mounts a session viewer at `/console_agent`. By default it's open — you can protect it with basic auth or a custom authentication function.
+
+### Basic Auth
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.admin_username = 'admin'
+  config.admin_password = ENV['CONSOLE_AGENT_PASSWORD']
+end
+```
+
+### Custom Authentication
+
+For apps with their own auth system, pass a proc to `authenticate`. It runs in the controller context, so you have access to `session`, `request`, `redirect_to`, etc.
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.authenticate = proc {
+    user = User.find_by(id: session[:user_id])
+    unless user&.admin?
+      redirect_to '/login'
+    end
+  }
+end
+```
+
+When `authenticate` is set, `admin_username` / `admin_password` are ignored.
+
 ## Requirements
 
 Ruby >= 2.5, Rails >= 5.0, Faraday >= 1.0
