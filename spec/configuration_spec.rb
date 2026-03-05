@@ -8,8 +8,8 @@ RSpec.describe ConsoleAgent::Configuration do
       expect(config.provider).to eq(:anthropic)
     end
 
-    it 'sets max_tokens to 4096' do
-      expect(config.max_tokens).to eq(4096)
+    it 'sets max_tokens to nil (auto-resolved per model)' do
+      expect(config.max_tokens).to be_nil
     end
 
     it 'sets auto_execute to false' do
@@ -61,7 +61,7 @@ RSpec.describe ConsoleAgent::Configuration do
 
     it 'returns default model for anthropic' do
       config.provider = :anthropic
-      expect(config.resolved_model).to eq('claude-opus-4-6')
+      expect(config.resolved_model).to eq('claude-sonnet-4-6')
     end
 
     it 'returns default model for openai' do

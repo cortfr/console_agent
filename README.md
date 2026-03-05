@@ -77,15 +77,21 @@ end
 | `/auto` | Toggle auto-execute (skip confirmations) |
 | `/compact` | Compress history into a summary (saves tokens) |
 | `/usage` | Show token stats |
+| `/cost` | Show per-model cost breakdown |
+| `/think` | Upgrade to thinking model (Opus) for the rest of the session |
 | `/debug` | Toggle raw API output |
 | `/name <label>` | Name the session for easy resume |
 
 Prefix input with `>` to run Ruby directly (no LLM round-trip). The result is added to conversation context.
 
+Say "think harder" in any query to auto-upgrade to the thinking model for that session. After 5+ tool rounds, you'll also be prompted to switch.
+
 ## Features
 
 - **Tool use** — AI introspects your schema, models, files, and code to write accurate queries
 - **Multi-step plans** — complex tasks are broken into steps, executed sequentially with `step1`/`step2` references
+- **Two-tier models** — defaults to Sonnet for speed/cost; `/think` upgrades to Opus when you need it
+- **Cost tracking** — `/cost` shows per-model token usage and estimated spend
 - **Memories** — AI saves what it learns about your app across sessions
 - **App guide** — `ai_init` generates a guide injected into every system prompt
 - **Sessions** — name, list, and resume interactive conversations (`ai_setup` to enable)
@@ -98,8 +104,12 @@ ConsoleAgent.configure do |config|
   config.provider = :anthropic       # or :openai
   config.auto_execute = false         # true to skip confirmations
   config.session_logging = true       # requires ai_setup
+  config.model = 'claude-sonnet-4-6'  # model used by /think (default)
+  config.thinking_model = 'claude-opus-4-6'  # model used by /think (default)
 end
 ```
+
+The default model is `claude-sonnet-4-6` (Anthropic) or `gpt-5.3-codex` (OpenAI). The thinking model defaults to `claude-opus-4-6` and is activated via `/think` or by saying "think harder".
 
 ## Requirements
 

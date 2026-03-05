@@ -11,6 +11,7 @@ module ConsoleAgent
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @token_usage = Hash.new { |h, k| h[k] = { input: 0, output: 0 } }
       @input_history = []
     end
 
@@ -209,6 +210,7 @@ module ConsoleAgent
       @history = []
       @total_input_tokens = 0
       @total_output_tokens = 0
+      @token_usage = Hash.new { |h, k| h[k] = { input: 0, output: 0 } }
       @interactive_query = nil
       @interactive_session_id = nil
       @interactive_session_name = nil
@@ -224,7 +226,7 @@ module ConsoleAgent
       name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
       # Write banner to real stdout (bypass TeeIO) so it doesn't accumulate on resume
       @interactive_old_stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
-      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code to run directly | /usage | /compact | /name <label>\e[0m"
+      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -260,6 +262,16 @@ module ConsoleAgent
 
         if input == '/compact'
           compact_history
+          next
+        end
+
+        if input == '/cost'
+          display_cost_summary
+          next
+        end
+
+        if input == '/think'
+          upgrade_to_thinking_model
           next
         end
 
@@ -313,6 +325,11 @@ module ConsoleAgent
 
         # Add to Readline history (avoid consecutive duplicates)
         Readline::HISTORY.push(input) unless input == Readline::HISTORY.to_a.last
+
+        # Auto-upgrade to thinking model on "think harder" phrases
+        if input =~ /think\s*harder/i
+          upgrade_to_thinking_model
+        end
 
         @interactive_query ||= input
         @history << { role: :user, content: input }
@@ -547,8 +564,18 @@ module ConsoleAgent
       last_tool_names = []
 
       exhausted = false
+      thinking_suggested = false
 
       max_rounds.times do |round|
+        if round == 5 && !thinking_suggested && !on_thinking_model?
+          thinking_suggested = true
+          thinking_name = ConsoleAgent.configuration.resolved_thinking_model
+          $stdout.puts "\e[33m  This query is using many tool rounds. Switch to thinking model (#{thinking_name})? [y/N]\e[0m"
+          answer = Readline.readline("  ", false).to_s.strip.downcase
+          if answer == 'y'
+            upgrade_to_thinking_model
+          end
+        end
         if round == 0
           $stdout.puts "\e[2m  Thinking...\e[0m"
         else
@@ -804,6 +831,10 @@ module ConsoleAgent
     def track_usage(result)
       @total_input_tokens += result.input_tokens || 0
       @total_output_tokens += result.output_tokens || 0
+
+      model = ConsoleAgent.configuration.resolved_model
+      @token_usage[model][:input] += result.input_tokens || 0
+      @token_usage[model][:output] += result.output_tokens || 0
     end
 
     def display_usage(result, show_session: false)
@@ -909,6 +940,51 @@ module ConsoleAgent
       return if @total_input_tokens == 0 && @total_output_tokens == 0
 
       $stdout.puts "\e[2m[session totals — in: #{@total_input_tokens} | out: #{@total_output_tokens} | total: #{@total_input_tokens + @total_output_tokens}]\e[0m"
+    end
+
+    def display_cost_summary
+      if @token_usage.empty?
+        $stdout.puts "\e[2m  No usage yet.\e[0m"
+        return
+      end
+
+      total_cost = 0.0
+      $stdout.puts "\e[36m  Cost estimate:\e[0m"
+
+      @token_usage.each do |model, usage|
+        pricing = Configuration::PRICING[model]
+        input_str = "in: #{format_tokens(usage[:input])}"
+        output_str = "out: #{format_tokens(usage[:output])}"
+
+        if pricing
+          cost = (usage[:input] * pricing[:input]) + (usage[:output] * pricing[:output])
+          total_cost += cost
+          $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}  ~$#{'%.2f' % cost}\e[0m"
+        else
+          $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}  (pricing unknown)\e[0m"
+        end
+      end
+
+      $stdout.puts "\e[36m    Total: ~$#{'%.2f' % total_cost}\e[0m"
+    end
+
+    def upgrade_to_thinking_model
+      config = ConsoleAgent.configuration
+      current = config.resolved_model
+      thinking = config.resolved_thinking_model
+
+      if current == thinking
+        $stdout.puts "\e[36m  Already using thinking model (#{current}).\e[0m"
+      else
+        config.model = thinking
+        @provider = nil
+        $stdout.puts "\e[36m  Switched to thinking model: #{thinking}\e[0m"
+      end
+    end
+
+    def on_thinking_model?
+      config = ConsoleAgent.configuration
+      config.resolved_model == config.resolved_thinking_model
     end
 
     def warn_if_history_large

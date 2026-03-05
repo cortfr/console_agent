@@ -50,7 +50,7 @@ module ConsoleAgent
 
         body = {
           model: config.resolved_model,
-          max_tokens: config.max_tokens,
+          max_tokens: config.resolved_max_tokens,
           temperature: config.temperature,
           messages: formatted
         }

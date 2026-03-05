@@ -2,7 +2,19 @@ module ConsoleAgent
   class Configuration
     PROVIDERS = %i[anthropic openai].freeze
 
-    attr_accessor :provider, :api_key, :model, :max_tokens,
+    PRICING = {
+      'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+      'claude-opus-4-6'   => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000 },
+      'claude-haiku-4-5-20251001' => { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
+    }.freeze
+
+    DEFAULT_MAX_TOKENS = {
+      'claude-sonnet-4-6' => 16_000,
+      'claude-haiku-4-5-20251001' => 16_000,
+      'claude-opus-4-6'   => 4_096,
+    }.freeze
+
+    attr_accessor :provider, :api_key, :model, :thinking_model, :max_tokens,
                   :auto_execute, :temperature,
                   :timeout, :debug, :max_tool_rounds,
                   :storage_adapter, :memories_enabled,
@@ -13,12 +25,13 @@ module ConsoleAgent
       @provider     = :anthropic
       @api_key      = nil
       @model        = nil
-      @max_tokens   = 4096
+      @thinking_model = nil
+      @max_tokens   = nil
       @auto_execute = false
       @temperature  = 0.2
       @timeout      = 30
       @debug        = false
-      @max_tool_rounds = 100
+      @max_tool_rounds = 200
       @storage_adapter  = nil
       @memories_enabled = true
       @session_logging  = true
@@ -40,6 +53,23 @@ module ConsoleAgent
 
     def resolved_model
       return @model if @model && !@model.empty?
+
+      case @provider
+      when :anthropic
+        'claude-sonnet-4-6'
+      when :openai
+        'gpt-5.3-codex'
+      end
+    end
+
+    def resolved_max_tokens
+      return @max_tokens if @max_tokens
+
+      DEFAULT_MAX_TOKENS.fetch(resolved_model, 4096)
+    end
+
+    def resolved_thinking_model
+      return @thinking_model if @thinking_model && !@thinking_model.empty?
 
       case @provider
       when :anthropic
