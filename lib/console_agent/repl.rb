@@ -365,6 +365,20 @@ module ConsoleAgent
     def send_and_execute
       begin
         result, tool_messages = send_query(nil, conversation: @history)
+      rescue Providers::ProviderError => e
+        if e.message.include?("prompt is too long") && @history.length >= 6
+          $stdout.puts "\e[33m  Context limit reached. Auto-compacting history...\e[0m"
+          compact_history
+          begin
+            result, tool_messages = send_query(nil, conversation: @history)
+          rescue Providers::ProviderError => e2
+            $stderr.puts "\e[31m  Still too large after compaction: #{e2.message}\e[0m"
+            return :error
+          end
+        else
+          $stderr.puts "\e[31mConsoleAgent Error: #{e.class}: #{e.message}\e[0m"
+          return :error
+        end
       rescue Interrupt
         $stdout.puts "\n\e[33m  Aborted.\e[0m"
         return :interrupted
@@ -547,8 +561,22 @@ module ConsoleAgent
           $stdout.puts "\e[2m  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}\e[0m"
         end
 
-        result = with_escape_monitoring do
-          provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
+        begin
+          result = with_escape_monitoring do
+            provider.chat_with_tools(messages, tools: tools, system_prompt: active_system_prompt)
+          end
+        rescue Providers::ProviderError => e
+          if e.message.include?("prompt is too long") && messages.length >= 6
+            $stdout.puts "\e[33m  Context limit hit mid-session. Compacting messages...\e[0m"
+            messages = compact_messages(messages)
+            unless @_retried_compact
+              @_retried_compact = true
+              retry
+            end
+          end
+          raise
+        ensure
+          @_retried_compact = nil
         end
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
@@ -885,10 +913,14 @@ module ConsoleAgent
 
     def warn_if_history_large
       chars = @history.sum { |m| m[:content].to_s.length }
-      return if chars < 50_000 || @compact_warned
 
-      @compact_warned = true
-      $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
+      if chars > 120_000 && @history.length >= 6
+        $stdout.puts "\e[33m  Context growing large (~#{format_tokens(chars)} chars). Auto-compacting...\e[0m"
+        compact_history
+      elsif chars > 50_000 && !@compact_warned
+        @compact_warned = true
+        $stdout.puts "\e[33m  Conversation is getting large (~#{format_tokens(chars)} chars). Consider running /compact to reduce context size.\e[0m"
+      end
     end
 
     def compact_history
@@ -939,6 +971,22 @@ module ConsoleAgent
       rescue => e
         $stdout.puts "\e[31m  Compaction failed: #{e.message}\e[0m"
       end
+    end
+
+    def compact_messages(messages)
+      return messages if messages.length < 6
+
+      to_summarize = messages[0...-4]
+      to_keep = messages[-4..]
+
+      history_text = to_summarize.map { |m| "#{m[:role]}: #{m[:content].to_s[0..500]}" }.join("\n\n")
+
+      summary_result = provider.chat(
+        [{ role: :user, content: "Summarize this conversation context concisely, preserving key facts, IDs, and findings:\n\n#{history_text}" }],
+        system_prompt: "You are a conversation summarizer. Be concise but preserve all actionable information."
+      )
+
+      [{ role: :user, content: "CONTEXT SUMMARY:\n#{summary_result.text}" }] + to_keep
     end
 
     def display_exit_info
