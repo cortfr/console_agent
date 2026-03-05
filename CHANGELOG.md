@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0]
+
+- Add `/expand` command to view previous results
+- Exclude previous output from context; add tool for LLM to retrieve it on demand
+- Show summarized info per LLM call in `/debug`
+
 ## [0.9.0]
 
 - Add `/system` and `/context` commands to inspect what is being sent
