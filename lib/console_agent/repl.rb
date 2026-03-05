@@ -310,7 +310,7 @@ module ConsoleAgent
         end
 
         if input.start_with?('/name')
-          name = input.sub('/name', '').strip
+          name = input.sub('/name', '').strip.gsub(/\A(['"])(.*)\1\z/, '\2')
           if name.empty?
             if @interactive_session_name
               @interactive_old_stdout.puts "\e[36m  Session name: #{@interactive_session_name}\e[0m"
