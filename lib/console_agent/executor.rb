@@ -126,30 +126,38 @@ module ConsoleAgent
       @last_answer = answer
       echo_stdin(answer)
 
-      case answer
-      when 'y', 'yes'
-        execute(code)
-      when 'e', 'edit'
-        edited = open_in_editor(code)
-        if edited && edited != code
-          $stdout.puts colorize("# Edited code:", :yellow)
-          $stdout.puts highlight_code(edited)
-          $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
-          edit_answer = $stdin.gets.to_s.strip.downcase
-          echo_stdin(edit_answer)
-          if edit_answer == 'y'
-            execute(edited)
+      loop do
+        case answer
+        when 'y', 'yes', 'a'
+          return execute(code)
+        when 'e', 'edit'
+          edited = open_in_editor(code)
+          if edited && edited != code
+            $stdout.puts colorize("# Edited code:", :yellow)
+            $stdout.puts highlight_code(edited)
+            $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
+            edit_answer = $stdin.gets.to_s.strip.downcase
+            echo_stdin(edit_answer)
+            if edit_answer == 'y'
+              return execute(edited)
+            else
+              $stdout.puts colorize("Cancelled.", :yellow)
+              return nil
+            end
           else
-            $stdout.puts colorize("Cancelled.", :yellow)
-            nil
+            return execute(code)
           end
+        when 'n', 'no', ''
+          $stdout.puts colorize("Cancelled.", :yellow)
+          @last_cancelled = true
+          return nil
         else
-          execute(code)
+          $stdout.print colorize("Execute? [y/N/edit] ", :yellow)
+          @on_prompt&.call
+          answer = $stdin.gets.to_s.strip.downcase
+          @last_answer = answer
+          echo_stdin(answer)
         end
-      else
-        $stdout.puts colorize("Cancelled.", :yellow)
-        @last_cancelled = true
-        nil
       end
     end
 
