@@ -90,6 +90,36 @@ RSpec.describe ConsoleAgent::Executor do
     end
   end
 
+  describe '#store_output and #recall_output' do
+    it 'stores and recalls output by id' do
+      id = executor.store_output("some output data")
+      expect(executor.recall_output(id)).to eq("some output data")
+    end
+
+    it 'assigns incrementing ids' do
+      id1 = executor.store_output("first")
+      id2 = executor.store_output("second")
+      expect(id2).to eq(id1 + 1)
+    end
+
+    it 'returns nil for unknown id' do
+      expect(executor.recall_output(999)).to be_nil
+    end
+  end
+
+  describe '#expand_output' do
+    it 'stores omitted output when display_result truncates' do
+      # Execute something that produces a large result
+      result = executor.execute('("x" * 5000)')
+      expect(executor.expand_output(1)).to include("x" * 100)
+    end
+
+    it 'returns nil when no output was omitted' do
+      executor.execute('1 + 1')
+      expect(executor.expand_output(1)).to be_nil
+    end
+  end
+
   describe '#confirm_and_execute' do
     it 'executes on y' do
       allow($stdin).to receive(:gets).and_return("y\n")

@@ -457,6 +457,150 @@ RSpec.describe ConsoleAgent::Repl do
     end
   end
 
+  describe 'output trimming in conversation' do
+    it 'keeps recent outputs in full and trims older ones' do
+      # Build history with 4 execution outputs (more than RECENT_OUTPUTS_TO_KEEP=2)
+      history = []
+      4.times do |i|
+        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 1 }
+        history << { role: :assistant, content: "Response #{i}" }
+      end
+
+      repl.instance_variable_set(:@history, history)
+      trimmed = repl.send(:trim_old_outputs, history)
+
+      # First 2 outputs should be trimmed (4 - 2 = 2)
+      trimmed_user_msgs = trimmed.select { |m| m[:role] == :user }
+      expect(trimmed_user_msgs[0][:content]).to include('[Output omitted')
+      expect(trimmed_user_msgs[0][:content]).to include('recall_output')
+      expect(trimmed_user_msgs[1][:content]).to include('[Output omitted')
+
+      # Last 2 should be kept in full
+      expect(trimmed_user_msgs[2][:content]).to include('data_2')
+      expect(trimmed_user_msgs[3][:content]).to include('data_3')
+    end
+
+    it 'does not trim when outputs are within the limit' do
+      history = []
+      2.times do |i|
+        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 1 }
+      end
+
+      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed.each do |msg|
+        expect(msg[:content]).not_to include('[Output omitted')
+      end
+    end
+
+    it 'strips output_id from messages sent to LLM' do
+      history = [{ role: :user, content: "test", output_id: 1 }]
+      trimmed = repl.send(:trim_old_outputs, history)
+      expect(trimmed.first).not_to have_key(:output_id)
+    end
+
+    it 'trims Anthropic tool result messages' do
+      history = []
+      4.times do |i|
+        history << {
+          role: 'user',
+          content: [{ 'type' => 'tool_result', 'tool_use_id' => "tool_#{i}", 'content' => "big data #{i}" }],
+          output_id: i + 1
+        }
+        history << { role: 'assistant', content: "Response #{i}" }
+      end
+
+      trimmed = repl.send(:trim_old_outputs, history)
+
+      # First 2 tool results should be trimmed (4 - 2 = 2)
+      trimmed_tool_msgs = trimmed.select { |m| m[:content].is_a?(Array) }
+      expect(trimmed_tool_msgs[0][:content][0]['content']).to include('recall_output')
+      expect(trimmed_tool_msgs[1][:content][0]['content']).to include('recall_output')
+      # Last 2 should keep original content
+      expect(trimmed_tool_msgs[2][:content][0]['content']).to eq('big data 2')
+      expect(trimmed_tool_msgs[3][:content][0]['content']).to eq('big data 3')
+    end
+
+    it 'trims OpenAI tool result messages' do
+      history = []
+      4.times do |i|
+        history << { role: 'tool', tool_call_id: "tc_#{i}", content: "big data #{i}", output_id: i + 1 }
+        history << { role: 'assistant', content: "Response #{i}" }
+      end
+
+      trimmed = repl.send(:trim_old_outputs, history)
+      tool_msgs = trimmed.select { |m| m[:role].to_s == 'tool' }
+      expect(tool_msgs[0][:content]).to include('recall_output')
+      expect(tool_msgs[1][:content]).to include('recall_output')
+      expect(tool_msgs[2][:content]).to eq('big data 2')
+    end
+
+    it 'passes through messages without output_id unchanged' do
+      history = [
+        { role: :user, content: "hello" },
+        { role: :assistant, content: "hi" }
+      ]
+      trimmed = repl.send(:trim_old_outputs, history)
+      expect(trimmed[0][:content]).to eq("hello")
+      expect(trimmed[1][:content]).to eq("hi")
+    end
+  end
+
+  describe '/expand command' do
+    before do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+    end
+
+    it 'displays full output for a valid expand id' do
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1
+          # Execute something that produces a large truncated result
+          repl.instance_variable_get(:@executor).store_output("full output here")
+          # The store_output above returns id 1, and we also need an omitted_output
+          repl.instance_variable_get(:@executor).instance_variable_get(:@omitted_outputs)[1] = "full omitted display"
+          '/expand 1'
+        when 2 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+      expect(output).to include('full omitted display')
+    end
+
+    it 'shows error for invalid expand id' do
+      readline_count = 0
+      allow(Readline).to receive(:readline) do
+        readline_count += 1
+        case readline_count
+        when 1 then '/expand 999'
+        when 2 then nil
+        end
+      end
+
+      output = capture_stdout { repl.interactive }
+      expect(output).to include('No omitted output with id 999')
+    end
+  end
+
+  describe 'direct execution stores output_id in history' do
+    it 'tags history entry with output_id' do
+      allow(Readline).to receive(:respond_to?).with(:parse_and_bind).and_return(false)
+
+      call_count = 0
+      allow(Readline).to receive(:readline) do
+        call_count += 1
+        call_count == 1 ? '> 1 + 1' : nil
+      end
+
+      capture_stdout { repl.interactive }
+
+      history = repl.instance_variable_get(:@history)
+      expect(history.first[:output_id]).to be_a(Integer)
+    end
+  end
+
   describe '#resume' do
     let(:mock_session) do
       double('Session',

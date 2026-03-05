@@ -170,6 +170,24 @@ module ConsoleAgent
           handler: ->(args) { code.search_code(args['query'], args['directory']) }
         )
 
+        if @executor
+          register(
+            name: 'recall_output',
+            description: 'Retrieve a previous code execution output that was omitted from the conversation to save context. Use the output id shown in the "[Output omitted]" placeholder.',
+            parameters: {
+              'type' => 'object',
+              'properties' => {
+                'id' => { 'type' => 'integer', 'description' => 'The output id to retrieve' }
+              },
+              'required' => ['id']
+            },
+            handler: ->(args) {
+              result = @executor.recall_output(args['id'].to_i)
+              result || "No output found with id #{args['id']}"
+            }
+          )
+        end
+
         unless @mode == :init
           register(
             name: 'ask_user',

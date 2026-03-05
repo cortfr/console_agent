@@ -50,6 +50,8 @@ module ConsoleAgent
       @binding_context = binding_context
       @omitted_outputs = {}
       @omitted_counter = 0
+      @output_store = {}
+      @output_counter = 0
     end
 
     def extract_code(response)
@@ -111,6 +113,16 @@ module ConsoleAgent
 
     def expand_output(id)
       @omitted_outputs[id]
+    end
+
+    def store_output(content)
+      @output_counter += 1
+      @output_store[@output_counter] = content
+      @output_counter
+    end
+
+    def recall_output(id)
+      @output_store[id]
     end
 
     def last_answer

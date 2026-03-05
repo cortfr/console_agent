@@ -46,6 +46,35 @@ RSpec.describe ConsoleAgent::Tools::Registry do
     end
   end
 
+  describe 'recall_output tool' do
+    it 'is registered when executor is provided' do
+      executor = ConsoleAgent::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      names = reg.definitions.map { |d| d[:name] }
+      expect(names).to include('recall_output')
+    end
+
+    it 'is not registered without an executor' do
+      names = registry.definitions.map { |d| d[:name] }
+      expect(names).not_to include('recall_output')
+    end
+
+    it 'retrieves stored output' do
+      executor = ConsoleAgent::Executor.new(binding)
+      id = executor.store_output("stored data")
+      reg = described_class.new(executor: executor)
+      result = reg.execute('recall_output', { 'id' => id })
+      expect(result).to eq("stored data")
+    end
+
+    it 'returns error for unknown id' do
+      executor = ConsoleAgent::Executor.new(binding)
+      reg = described_class.new(executor: executor)
+      result = reg.execute('recall_output', { 'id' => 999 })
+      expect(result).to include('No output found')
+    end
+  end
+
   describe '#execute' do
     it 'returns error for unknown tool' do
       result = registry.execute('nonexistent', {})

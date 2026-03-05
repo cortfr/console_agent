@@ -337,7 +337,8 @@ module ConsoleAgent
 
           context_msg = "User directly executed code: `#{raw_code}`"
           context_msg += "\n#{result_str}" unless output_parts.empty?
-          @history << { role: :user, content: context_msg }
+          output_id = output_parts.empty? ? nil : @executor.store_output(result_str)
+          @history << { role: :user, content: context_msg, output_id: output_id }
 
           @interactive_query ||= input
           @last_interactive_code = raw_code
@@ -470,7 +471,8 @@ module ConsoleAgent
         unless output_parts.empty?
           result_str = output_parts.join("\n\n")
           result_str = result_str[0..1000] + '...' if result_str.length > 1000
-          @history << { role: :user, content: "Code was executed. #{result_str}" }
+          output_id = @executor.store_output(result_str)
+          @history << { role: :user, content: "Code was executed. #{result_str}", output_id: output_id }
         end
 
         :success
@@ -558,6 +560,10 @@ module ConsoleAgent
       prompt.strip
     end
 
+    # Number of most recent execution outputs to keep in full in the conversation.
+    # Older outputs are replaced with a short reference the LLM can recall via tool.
+    RECENT_OUTPUTS_TO_KEEP = 2
+
     def send_query(query, conversation: nil)
       ConsoleAgent.configuration.validate!
 
@@ -566,6 +572,8 @@ module ConsoleAgent
                  else
                    [{ role: :user, content: query }]
                  end
+
+      messages = trim_old_outputs(messages) if conversation
 
       send_query_with_tools(messages)
     end
@@ -639,6 +647,10 @@ module ConsoleAgent
           end
 
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
+          # Store large tool results so they can be trimmed from older conversation turns
+          if tool_result.to_s.length > 200
+            tool_msg[:output_id] = @executor.store_output(tool_result.to_s)
+          end
           messages << tool_msg
           new_messages << tool_msg
         end
@@ -986,6 +998,54 @@ module ConsoleAgent
       config.resolved_model == config.resolved_thinking_model
     end
 
+    # Replace older execution outputs with short references.
+    # Keeps the last RECENT_OUTPUTS_TO_KEEP outputs in full.
+    def trim_old_outputs(messages)
+      # Find indices of messages with output_id (execution outputs and tool results)
+      output_indices = messages.each_with_index
+                               .select { |m, _| m[:output_id] }
+                               .map { |_, i| i }
+
+      if output_indices.length <= RECENT_OUTPUTS_TO_KEEP
+        return messages.map { |m| m.except(:output_id) }
+      end
+
+      # Indices to trim (all except the most recent N)
+      trim_indices = output_indices[0..-(RECENT_OUTPUTS_TO_KEEP + 1)]
+      messages.each_with_index.map do |msg, i|
+        if trim_indices.include?(i)
+          trim_message(msg)
+        else
+          msg.except(:output_id)
+        end
+      end
+    end
+
+    # Replace the content of a message with a short reference to the stored output.
+    # Handles both regular messages and tool result messages (Anthropic/OpenAI formats).
+    def trim_message(msg)
+      ref = "[Output omitted — use recall_output tool with id #{msg[:output_id]} to retrieve]"
+
+      if msg[:content].is_a?(Array)
+        # Anthropic tool_result format: [{ 'type' => 'tool_result', 'tool_use_id' => '...', 'content' => '...' }]
+        trimmed_content = msg[:content].map do |block|
+          if block.is_a?(Hash) && block['type'] == 'tool_result'
+            block.merge('content' => ref)
+          else
+            block
+          end
+        end
+        { role: msg[:role], content: trimmed_content }
+      elsif msg[:role].to_s == 'tool'
+        # OpenAI tool result format
+        msg.except(:output_id).merge(content: ref)
+      else
+        # Regular user message (code execution result)
+        first_line = msg[:content].to_s.lines.first&.strip || msg[:content]
+        { role: msg[:role], content: "#{first_line}\n#{ref}" }
+      end
+    end
+
     def warn_if_history_large
       chars = @history.sum { |m| m[:content].to_s.length }
 
@@ -1134,13 +1194,14 @@ module ConsoleAgent
         return
       end
 
-      @interactive_old_stdout.puts "\e[36m  Conversation (#{@history.length} messages):\e[0m"
-      @history.each_with_index do |msg, i|
+      trimmed = trim_old_outputs(@history)
+      @interactive_old_stdout.puts "\e[36m  Conversation (#{trimmed.length} messages, as sent to LLM):\e[0m"
+      trimmed.each_with_index do |msg, i|
         role = msg[:role].to_s
         content = msg[:content].to_s
         label = role == 'user' ? "\e[33m[user]\e[0m" : "\e[36m[assistant]\e[0m"
         @interactive_old_stdout.puts "#{label} #{content}"
-        @interactive_old_stdout.puts if i < @history.length - 1
+        @interactive_old_stdout.puts if i < trimmed.length - 1
       end
     end
 
