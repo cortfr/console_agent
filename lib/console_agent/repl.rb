@@ -285,6 +285,17 @@ module ConsoleAgent
           next
         end
 
+        if input.start_with?('/expand')
+          expand_id = input.sub('/expand', '').strip.to_i
+          full_output = @executor.expand_output(expand_id)
+          if full_output
+            @interactive_old_stdout.puts full_output
+          else
+            @interactive_old_stdout.puts "\e[33mNo omitted output with id #{expand_id}\e[0m"
+          end
+          next
+        end
+
         if input == '/think'
           upgrade_to_thinking_model
           next
@@ -1144,6 +1155,7 @@ module ConsoleAgent
       @interactive_old_stdout.puts "\e[2m    /name <lbl>  Name this session for easy resume\e[0m"
       @interactive_old_stdout.puts "\e[2m    /context     Show conversation history sent to the LLM\e[0m"
       @interactive_old_stdout.puts "\e[2m    /system      Show the system prompt\e[0m"
+      @interactive_old_stdout.puts "\e[2m    /expand <id> Show full omitted output\e[0m"
       @interactive_old_stdout.puts "\e[2m    /debug       Toggle debug mode\e[0m"
       @interactive_old_stdout.puts "\e[2m    > code       Execute Ruby directly (skip LLM)\e[0m"
       @interactive_old_stdout.puts "\e[2m    exit/quit    Leave interactive mode\e[0m"

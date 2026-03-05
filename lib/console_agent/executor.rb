@@ -48,6 +48,8 @@ module ConsoleAgent
 
     def initialize(binding_context)
       @binding_context = binding_context
+      @omitted_outputs = {}
+      @omitted_counter = 0
     end
 
     def extract_code(response)
@@ -105,6 +107,10 @@ module ConsoleAgent
 
     def last_output
       @last_output
+    end
+
+    def expand_output(id)
+      @omitted_outputs[id]
     end
 
     def last_answer
@@ -185,7 +191,10 @@ module ConsoleAgent
         parts = []
         parts << "#{omitted_lines} lines" if omitted_lines > 0
         parts << "#{omitted_chars} chars" if omitted_chars > 0
-        $stdout.puts colorize("  (omitting #{parts.join(', ')})", :yellow)
+
+        @omitted_counter += 1
+        @omitted_outputs[@omitted_counter] = full
+        $stdout.puts colorize("  (omitting #{parts.join(', ')})  /expand #{@omitted_counter} to see all", :yellow)
       end
     end
 
