@@ -35,7 +35,7 @@ ConsoleAgent.configure do |config|
   # config.connection_class = Sharding::CentralizedModel
 
   # Admin UI credentials (mount ConsoleAgent::Engine => '/console_agent' in routes.rb)
-  # When nil, no authentication is required (convenient for development)
+  # When nil, all requests are denied. Set credentials or use config.authenticate.
   # config.admin_username = 'admin'
   # config.admin_password = 'changeme'
 end

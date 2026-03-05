@@ -13,7 +13,10 @@ module ConsoleAgent
         username = ConsoleAgent.configuration.admin_username
         password = ConsoleAgent.configuration.admin_password
 
-        return unless username && password
+        unless username && password
+          head :unauthorized
+          return
+        end
 
         authenticate_or_request_with_http_basic('ConsoleAgent Admin') do |u, p|
           ActiveSupport::SecurityUtils.secure_compare(u, username) &
