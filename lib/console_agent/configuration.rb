@@ -40,6 +40,42 @@ module ConsoleAgent
       @admin_username   = nil
       @admin_password   = nil
       @authenticate     = nil
+      @safety_guards    = nil
+    end
+
+    def safety_guards
+      @safety_guards ||= begin
+        require 'console_agent/safety_guards'
+        SafetyGuards.new
+      end
+    end
+
+    # Register a custom safety guard by name with an around-block.
+    #
+    #   config.safety_guard :mailers do |&execute|
+    #     ActionMailer::Base.perform_deliveries = false
+    #     execute.call
+    #   ensure
+    #     ActionMailer::Base.perform_deliveries = true
+    #   end
+    def safety_guard(name, &block)
+      safety_guards.add(name, &block)
+    end
+
+    # Register a built-in safety guard by name.
+    # Available: :database_writes, :http_mutations, :mailers
+    def use_builtin_safety_guard(name)
+      require 'console_agent/safety_guards'
+      case name.to_sym
+      when :database_writes
+        safety_guards.add(:database_writes, &BuiltinGuards.database_writes)
+      when :http_mutations
+        safety_guards.add(:http_mutations, &BuiltinGuards.http_mutations)
+      when :mailers
+        safety_guards.add(:mailers, &BuiltinGuards.mailers)
+      else
+        raise ConfigurationError, "Unknown built-in safety guard: #{name}. Available: database_writes, http_mutations, mailers"
+      end
     end
 
     def resolved_api_key

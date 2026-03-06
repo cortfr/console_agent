@@ -43,7 +43,7 @@ module ConsoleAgent
   class Executor
     CODE_REGEX = /```ruby\s*\n(.*?)```/m
 
-    attr_reader :binding_context, :last_error
+    attr_reader :binding_context, :last_error, :last_safety_error
     attr_accessor :on_prompt
 
     def initialize(binding_context)
@@ -80,18 +80,28 @@ module ConsoleAgent
       return nil if code.nil? || code.strip.empty?
 
       @last_error = nil
+      @last_safety_error = false
       captured_output = StringIO.new
       old_stdout = $stdout
       # Tee output: capture it and also print to the real stdout
       $stdout = TeeIO.new(old_stdout, captured_output)
 
-      result = binding_context.eval(code, "(console_agent)", 1)
+      result = with_safety_guards do
+        binding_context.eval(code, "(console_agent)", 1)
+      end
 
       $stdout = old_stdout
       display_result(result)
 
       @last_output = captured_output.string
       result
+    rescue ConsoleAgent::SafetyError => e
+      $stdout = old_stdout if old_stdout
+      @last_error = "SafetyError: #{e.message}"
+      @last_safety_error = true
+      $stderr.puts colorize("Blocked: #{e.message}", :red)
+      @last_output = captured_output&.string
+      nil
     rescue SyntaxError => e
       $stdout = old_stdout if old_stdout
       @last_error = "SyntaxError: #{e.message}"
@@ -100,6 +110,15 @@ module ConsoleAgent
       nil
     rescue => e
       $stdout = old_stdout if old_stdout
+      # Check if a SafetyError is wrapped (e.g. ActiveRecord::StatementInvalid wrapping our error)
+      if safety_error?(e)
+        safety_msg = extract_safety_message(e)
+        @last_error = "SafetyError: #{safety_msg}"
+        @last_safety_error = true
+        $stderr.puts colorize("Blocked: #{safety_msg}", :red)
+        @last_output = captured_output&.string
+        return nil
+      end
       @last_error = "#{e.class}: #{e.message}"
       $stderr.puts colorize("Error: #{@last_error}", :red)
       e.backtrace.first(3).each { |line| $stderr.puts colorize("  #{line}", :red) }
@@ -138,7 +157,8 @@ module ConsoleAgent
 
       @last_cancelled = false
       @last_answer = nil
-      $stdout.print colorize("Execute? [y/N/edit] ", :yellow)
+      prompt = execute_prompt
+      $stdout.print colorize(prompt, :yellow)
       @on_prompt&.call
       answer = $stdin.gets.to_s.strip.downcase
       @last_answer = answer
@@ -147,7 +167,12 @@ module ConsoleAgent
       loop do
         case answer
         when 'y', 'yes', 'a'
-          return execute(code)
+          result = execute(code)
+          return offer_danger_retry(code) if @last_safety_error
+          return result
+        when 'd', 'danger'
+          $stdout.puts colorize("Executing with safety guards disabled.", :red)
+          return execute_unsafe(code)
         when 'e', 'edit'
           edited = open_in_editor(code)
           if edited && edited != code
@@ -170,7 +195,7 @@ module ConsoleAgent
           @last_cancelled = true
           return nil
         else
-          $stdout.print colorize("Execute? [y/N/edit] ", :yellow)
+          $stdout.print colorize(prompt, :yellow)
           @on_prompt&.call
           answer = $stdin.gets.to_s.strip.downcase
           @last_answer = answer
@@ -180,6 +205,61 @@ module ConsoleAgent
     end
 
     private
+
+    def offer_danger_retry(code)
+      $stdout.print colorize("Re-run with safe mode disabled? [y/N] ", :yellow)
+      answer = $stdin.gets.to_s.strip.downcase
+      echo_stdin(answer)
+      if answer == 'y' || answer == 'yes'
+        $stdout.puts colorize("Executing with safety guards disabled.", :red)
+        return execute_unsafe(code)
+      end
+      $stdout.puts colorize("Cancelled.", :yellow)
+      nil
+    end
+
+    def execute_unsafe(code)
+      guards = ConsoleAgent.configuration.safety_guards
+      guards.disable!
+      execute(code)
+    ensure
+      guards.enable!
+    end
+
+    def execute_prompt
+      guards = ConsoleAgent.configuration.safety_guards
+      if !guards.empty? && guards.enabled?
+        "Execute? [y/N/edit/danger] "
+      else
+        "Execute? [y/N/edit] "
+      end
+    end
+
+    def with_safety_guards(&block)
+      ConsoleAgent.configuration.safety_guards.wrap(&block)
+    end
+
+    # Check if an exception is or wraps a SafetyError (e.g. AR::StatementInvalid wrapping it)
+    def safety_error?(exception)
+      return true if exception.is_a?(ConsoleAgent::SafetyError)
+      return true if exception.message.include?("ConsoleAgent safe mode")
+      cause = exception.cause
+      while cause
+        return true if cause.is_a?(ConsoleAgent::SafetyError)
+        cause = cause.cause
+      end
+      false
+    end
+
+    def extract_safety_message(exception)
+      return exception.message if exception.is_a?(ConsoleAgent::SafetyError)
+      cause = exception.cause
+      while cause
+        return cause.message if cause.is_a?(ConsoleAgent::SafetyError)
+        cause = cause.cause
+      end
+      exception.message
+    end
 
     MAX_DISPLAY_LINES = 10
     MAX_DISPLAY_CHARS = 2000

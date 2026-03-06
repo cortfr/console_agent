@@ -90,6 +90,73 @@ RSpec.describe ConsoleAgent::Executor do
     end
   end
 
+  describe '#execute with safety guards' do
+    it 'wraps execution with configured safety guards' do
+      call_log = []
+      ConsoleAgent.configuration.safety_guard(:test) do |&block|
+        call_log << :guard_before
+        result = block.call
+        call_log << :guard_after
+        result
+      end
+
+      result = executor.execute('1 + 1')
+      expect(result).to eq(2)
+      expect(call_log).to eq([:guard_before, :guard_after])
+    end
+
+    it 'skips guards when safety guards are disabled' do
+      call_log = []
+      ConsoleAgent.configuration.safety_guard(:test) do |&block|
+        call_log << :guard
+        block.call
+      end
+      ConsoleAgent.configuration.safety_guards.disable!
+
+      result = executor.execute('1 + 1')
+      expect(result).to eq(2)
+      expect(call_log).to be_empty
+    end
+
+    it 'reports guard errors as execution errors' do
+      ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
+        raise RuntimeError, "write blocked!"
+      end
+
+      result = executor.execute('"hello"')
+      expect(result).to be_nil
+      expect(executor.last_error).to include("write blocked!")
+    end
+
+    it 'catches SafetyError with a helpful message' do
+      ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
+        raise ConsoleAgent::SafetyError, "Database write blocked"
+      end
+
+      result = executor.execute('"hello"')
+      expect(result).to be_nil
+      expect(executor.last_error).to include("SafetyError")
+      expect(executor.last_error).to include("Database write blocked")
+      expect(executor.last_safety_error).to eq(true)
+    end
+
+    it 'detects SafetyError wrapped by another exception' do
+      ConsoleAgent.configuration.safety_guard(:blocker) do |&block|
+        begin
+          raise ConsoleAgent::SafetyError, "Database write blocked"
+        rescue ConsoleAgent::SafetyError
+          raise RuntimeError, "wrapped error"
+        end
+      end
+
+      result = executor.execute('"hello"')
+      expect(result).to be_nil
+      expect(executor.last_safety_error).to eq(true)
+      expect(executor.last_error).to include("SafetyError")
+      expect(executor.last_error).to include("Database write blocked")
+    end
+  end
+
   describe '#store_output and #recall_output' do
     it 'stores and recalls output by id' do
       id = executor.store_output("some output data")
@@ -141,6 +208,26 @@ RSpec.describe ConsoleAgent::Executor do
 
     it 'returns nil for empty code' do
       expect(executor.confirm_and_execute('')).to be_nil
+    end
+
+    it 'executes with guards disabled on danger' do
+      call_log = []
+      ConsoleAgent.configuration.safety_guard(:test) do |&block|
+        call_log << :guard
+        block.call
+      end
+
+      allow($stdin).to receive(:gets).and_return("d\n")
+      result = executor.confirm_and_execute('1 + 1')
+      expect(result).to eq(2)
+      expect(call_log).to be_empty
+    end
+
+    it 're-enables guards after danger execution' do
+      ConsoleAgent.configuration.safety_guard(:test) { |&b| b.call }
+      allow($stdin).to receive(:gets).and_return("d\n")
+      executor.confirm_and_execute('1 + 1')
+      expect(ConsoleAgent.configuration.safety_guards).to be_enabled
     end
   end
 end

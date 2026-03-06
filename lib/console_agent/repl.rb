@@ -22,8 +22,8 @@ module ConsoleAgent
         conversation = [{ role: :user, content: query }]
         exec_result, code, executed = one_shot_round(conversation)
 
-        # Auto-retry once if execution errored
-        if executed && @executor.last_error
+        # Auto-retry once if execution errored (but not for safety blocks — those are handled by the executor)
+        if executed && @executor.last_error && !@executor.last_safety_error
           error_msg = "Code execution failed with error: #{@executor.last_error}"
           error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
           conversation << { role: :assistant, content: @_last_result_text }
@@ -231,10 +231,12 @@ module ConsoleAgent
 
     def interactive_loop
       auto = ConsoleAgent.configuration.auto_execute
+      guards = ConsoleAgent.configuration.safety_guards
       name_display = @interactive_session_name ? " (#{@interactive_session_name})" : ""
       # Write banner to real stdout (bypass TeeIO) so it doesn't accumulate on resume
       @interactive_old_stdout.puts "\e[36mConsoleAgent interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
-      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle) | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
+      safe_info = guards.empty? ? '' : " | Safe mode: #{guards.enabled? ? 'ON' : 'OFF'} (/danger to toggle)"
+      @interactive_old_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle)#{safe_info} | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
 
       # Bind Shift-Tab to insert /auto command and submit
       if Readline.respond_to?(:parse_and_bind)
@@ -258,6 +260,32 @@ module ConsoleAgent
           ConsoleAgent.configuration.auto_execute = !ConsoleAgent.configuration.auto_execute
           mode = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
           @interactive_old_stdout.puts "\e[36m  Auto-execute: #{mode}\e[0m"
+          next
+        end
+
+        if input == '/danger'
+          guards = ConsoleAgent.configuration.safety_guards
+          if guards.empty?
+            @interactive_old_stdout.puts "\e[33m  No safety guards configured.\e[0m"
+          elsif guards.enabled?
+            guards.disable!
+            @interactive_old_stdout.puts "\e[31m  Safe mode: OFF (writes and side effects allowed!)\e[0m"
+          else
+            guards.enable!
+            @interactive_old_stdout.puts "\e[32m  Safe mode: ON (#{guards.names.join(', ')} guarded)\e[0m"
+          end
+          next
+        end
+
+        if input == '/safe'
+          guards = ConsoleAgent.configuration.safety_guards
+          if guards.empty?
+            @interactive_old_stdout.puts "\e[33m  No safety guards configured.\e[0m"
+          else
+            status = guards.enabled? ? "\e[32mON\e[0m" : "\e[31mOFF\e[0m"
+            @interactive_old_stdout.puts "\e[36m  Safe mode: #{status}\e[0m"
+            @interactive_old_stdout.puts "\e[2m  Guards: #{guards.names.join(', ')}\e[0m"
+          end
           next
         end
 
@@ -458,6 +486,32 @@ module ConsoleAgent
       if @executor.last_cancelled?
         @history << { role: :user, content: "User declined to execute the code." }
         :cancelled
+      elsif @executor.last_safety_error
+        # Offer to re-run with guards disabled instead of feeding back to LLM
+        exec_result = @executor.offer_danger_retry(code)
+        if exec_result || !@executor.last_error
+          # Re-ran successfully (or returned nil legitimately)
+          @last_interactive_code = code
+          @last_interactive_output = @executor.last_output
+          @last_interactive_result = exec_result ? exec_result.inspect : nil
+          @last_interactive_executed = true
+
+          output_parts = []
+          if @executor.last_output && !@executor.last_output.strip.empty?
+            output_parts << "Output:\n#{@executor.last_output.strip}"
+          end
+          output_parts << "Return value: #{exec_result.inspect}" if exec_result
+          unless output_parts.empty?
+            result_str = output_parts.join("\n\n")
+            result_str = result_str[0..1000] + '...' if result_str.length > 1000
+            output_id = @executor.store_output(result_str)
+            @history << { role: :user, content: "Code was executed (safe mode disabled). #{result_str}", output_id: output_id }
+          end
+          :success
+        else
+          @history << { role: :user, content: "User declined to execute with safe mode disabled." }
+          :cancelled
+        end
       elsif @executor.last_error
         error_msg = "Code execution failed with error: #{@executor.last_error}"
         error_msg = error_msg[0..1000] + '...' if error_msg.length > 1000
@@ -1306,8 +1360,14 @@ module ConsoleAgent
 
     def display_help
       auto = ConsoleAgent.configuration.auto_execute ? 'ON' : 'OFF'
+      guards = ConsoleAgent.configuration.safety_guards
       @interactive_old_stdout.puts "\e[36m  Commands:\e[0m"
       @interactive_old_stdout.puts "\e[2m    /auto        Toggle auto-execute (currently #{auto}) (Shift-Tab)\e[0m"
+      unless guards.empty?
+        safe_status = guards.enabled? ? 'ON' : 'OFF'
+        @interactive_old_stdout.puts "\e[2m    /danger      Toggle safe mode (currently #{safe_status})\e[0m"
+        @interactive_old_stdout.puts "\e[2m    /safe        Show safety guard status\e[0m"
+      end
       @interactive_old_stdout.puts "\e[2m    /think       Switch to thinking model\e[0m"
       @interactive_old_stdout.puts "\e[2m    /compact     Summarize conversation to reduce context\e[0m"
       @interactive_old_stdout.puts "\e[2m    /usage       Show session token totals\e[0m"

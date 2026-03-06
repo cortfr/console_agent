@@ -74,6 +74,13 @@ module ConsoleAgent
       lines << "  Timeout:        #{c.timeout}s"
       lines << "  Max tool rounds:#{c.max_tool_rounds}"
       lines << "  Auto-execute:   #{c.auto_execute}"
+      guards = c.safety_guards
+      if guards.empty?
+        lines << "  Safe mode:      \e[33m(no guards configured)\e[0m"
+      else
+        status = guards.enabled? ? "\e[32mON\e[0m" : "\e[31mOFF\e[0m"
+        lines << "  Safe mode:      #{status} (#{guards.names.join(', ')})"
+      end
       lines << "  Memories:       #{c.memories_enabled}"
       lines << "  Session logging:#{session_table_status}"
       lines << "  Debug:          #{c.debug}"

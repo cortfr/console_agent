@@ -12,7 +12,7 @@ irb> ai "find the 5 most recent orders over $100"
 
   Order.where("total > ?", 100).order(created_at: :desc).limit(5)
 
-Execute? [y/N/edit] y
+Execute? [y/N/edit/danger] y
 => [#<Order id: 4821, ...>, ...]
 ```
 
@@ -75,6 +75,8 @@ end
 | Command | What it does |
 |---------|-------------|
 | `/auto` | Toggle auto-execute (skip confirmations) |
+| `/danger` | Toggle safe mode off/on (allow side effects) |
+| `/safe` | Show safety guard status |
 | `/compact` | Compress history into a summary (saves tokens) |
 | `/usage` | Show token stats |
 | `/cost` | Show per-model cost breakdown |
@@ -101,6 +103,49 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **History compaction** — `/compact` summarizes long conversations to reduce cost and latency
 - **Output trimming** — older execution outputs are automatically replaced with references; the LLM can recall them on demand via `recall_output`, and you can `/expand <id>` to see them
 - **Debug mode** — `/debug` shows context breakdown, token counts, and per-call cost estimates before and after each LLM call
+- **Safe mode** — configurable guards that block side effects (DB writes, HTTP mutations, email delivery) during AI code execution
+
+## Safety Guards
+
+Safety guards prevent AI-generated code from causing side effects. When a guard blocks an operation, the user is prompted to re-run with safe mode disabled.
+
+### Built-in Guards
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.use_builtin_safety_guard :database_writes  # blocks INSERT/UPDATE/DELETE/DROP/etc.
+  config.use_builtin_safety_guard :http_mutations    # blocks POST/PUT/PATCH/DELETE via Net::HTTP
+  config.use_builtin_safety_guard :mailers           # disables ActionMailer delivery
+end
+```
+
+- **`:database_writes`** — intercepts the ActiveRecord connection adapter to block write SQL. Works on Rails 5+ with any database adapter.
+- **`:http_mutations`** — intercepts `Net::HTTP#request` to block non-GET/HEAD/OPTIONS requests. Covers libraries built on Net::HTTP (HTTParty, RestClient, Faraday).
+- **`:mailers`** — sets `ActionMailer::Base.perform_deliveries = false` during execution.
+
+### Custom Guards
+
+Write your own guards using the around-block pattern:
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.safety_guard :jobs do |&execute|
+    Sidekiq::Testing.fake! { execute.call }
+  end
+end
+```
+
+Raise `ConsoleAgent::SafetyError` in your app code to trigger the safe mode prompt:
+
+```ruby
+raise ConsoleAgent::SafetyError, "Stripe charge blocked"
+```
+
+### Toggling Safe Mode
+
+- **`/danger`** in interactive mode toggles all guards off/on for the session
+- **`d`** at the `Execute? [y/N/edit/danger]` prompt disables guards for that single execution
+- When a guard blocks an operation, the user is prompted: `Re-run with safe mode disabled? [y/N]`
 
 ## Configuration
 

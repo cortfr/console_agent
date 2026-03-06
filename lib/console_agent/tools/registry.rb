@@ -354,6 +354,12 @@ module ConsoleAgent
           end
 
           exec_result = @executor.execute(step['code'])
+
+          # On safety error, offer to re-run with guards disabled
+          if @executor.last_safety_error
+            exec_result = @executor.offer_danger_retry(step['code'])
+          end
+
           # Make result available as step1, step2, etc. for subsequent steps
           @executor.binding_context.local_variable_set(:"step#{i + 1}", exec_result)
           output = @executor.last_output

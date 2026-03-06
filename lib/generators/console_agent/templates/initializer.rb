@@ -38,4 +38,21 @@ ConsoleAgent.configure do |config|
   # When nil, all requests are denied. Set credentials or use config.authenticate.
   # config.admin_username = 'admin'
   # config.admin_password = 'changeme'
+
+  # Safety guards: prevent side effects (DB writes, HTTP calls, etc.) during code execution.
+  # When enabled, code runs in safe mode by default. Users can toggle with /danger in the REPL.
+  #
+  # Built-in guard for database writes (works on Rails 5+, all adapters):
+  # config.use_builtin_safety_guard :database_writes
+  #
+  # Built-in guard for HTTP mutations — blocks POST/PUT/PATCH/DELETE via Net::HTTP.
+  # Covers most Ruby HTTP libraries (HTTParty, RestClient, Faraday) since they use Net::HTTP:
+  # config.use_builtin_safety_guard :http_mutations
+  #
+  # Built-in guard for mailers — disables ActionMailer delivery:
+  # config.use_builtin_safety_guard :mailers
+  #
+  # config.safety_guard :jobs do |&execute|
+  #   Sidekiq::Testing.fake! { execute.call }
+  # end
 end

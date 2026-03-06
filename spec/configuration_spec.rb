@@ -70,6 +70,45 @@ RSpec.describe ConsoleAgent::Configuration do
     end
   end
 
+  describe '#safety_guards' do
+    it 'returns a SafetyGuards instance' do
+      expect(config.safety_guards).to be_a(ConsoleAgent::SafetyGuards)
+    end
+
+    it 'returns the same instance on repeated calls' do
+      expect(config.safety_guards).to be(config.safety_guards)
+    end
+  end
+
+  describe '#safety_guard' do
+    it 'registers a custom guard' do
+      config.safety_guard(:test) { |&b| b.call }
+      expect(config.safety_guards.names).to include(:test)
+    end
+  end
+
+  describe '#use_builtin_safety_guard' do
+    it 'registers the database_writes guard' do
+      config.use_builtin_safety_guard(:database_writes)
+      expect(config.safety_guards.names).to include(:database_writes)
+    end
+
+    it 'registers the http_mutations guard' do
+      config.use_builtin_safety_guard(:http_mutations)
+      expect(config.safety_guards.names).to include(:http_mutations)
+    end
+
+    it 'registers the mailers guard' do
+      config.use_builtin_safety_guard(:mailers)
+      expect(config.safety_guards.names).to include(:mailers)
+    end
+
+    it 'raises for unknown built-in guards' do
+      expect { config.use_builtin_safety_guard(:unknown) }
+        .to raise_error(ConsoleAgent::ConfigurationError, /Unknown built-in/)
+    end
+  end
+
   describe '#validate!' do
     it 'raises for unknown provider' do
       config.provider = :unknown
