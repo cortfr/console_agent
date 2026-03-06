@@ -191,6 +191,58 @@ end
 
 When `authenticate` is set, `admin_username` / `admin_password` are ignored.
 
+## Channels
+
+ConsoleAgent can run through different channels beyond the Rails console. Each channel is a separate process that connects the same AI engine to a different interface.
+
+### Slack
+
+Run ConsoleAgent as a Slack bot. Each Slack thread becomes an independent AI session with full tool use, multi-step plans, and safety guards always on.
+
+#### Slack App Setup
+
+1. Create a new app at https://api.slack.com/apps → **Create New App** → **From scratch**
+
+2. **Enable Socket Mode** — Settings → Socket Mode → toggle ON. Generate an App-Level Token with the `connections:write` scope. Copy the `xapp-...` token.
+
+3. **Bot Token Scopes** — OAuth & Permissions → Bot Token Scopes, add:
+   - `chat:write`
+   - `channels:history` (public channels)
+   - `groups:history` (private channels, optional)
+   - `im:history` (direct messages)
+   - `users:read`
+
+4. **Event Subscriptions** — Event Subscriptions → toggle ON, then under "Subscribe to bot events" add:
+   - `message.channels` (public channels)
+   - `message.groups` (private channels, optional)
+   - `message.im` (direct messages)
+
+5. **App Home** — Show Tabs → toggle **Messages Tab** ON and check **"Allow users to send Slash commands and messages from the messages tab"**
+
+6. **Install to workspace** — Install App → Install to Workspace. Copy the `xoxb-...` Bot User OAuth Token.
+
+7. **Invite the bot** to a channel with `/invite @YourBotName`, or DM it directly.
+
+#### Configuration
+
+```ruby
+ConsoleAgent.configure do |config|
+  config.slack_bot_token = ENV['SLACK_BOT_TOKEN']   # xoxb-...
+  config.slack_app_token = ENV['SLACK_APP_TOKEN']    # xapp-...
+
+  # Optional: restrict to specific Slack channel IDs
+  # config.slack_channel_ids = 'C1234567890,C0987654321'
+end
+```
+
+#### Running
+
+```bash
+bundle exec rake console_agent:slack
+```
+
+This starts a long-running process (run it separately from your web server). Each new message creates a session; threaded replies continue the conversation. The bot auto-executes code with safety guards always enabled — there is no `/danger` equivalent in Slack.
+
 ## Requirements
 
 Ruby >= 2.5, Rails >= 5.0, Faraday >= 1.0

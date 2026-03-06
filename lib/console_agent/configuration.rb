@@ -20,7 +20,8 @@ module ConsoleAgent
                   :storage_adapter, :memories_enabled,
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
-                  :authenticate
+                  :authenticate,
+                  :slack_bot_token, :slack_app_token, :slack_channel_ids
 
     def initialize
       @provider     = :anthropic
@@ -41,6 +42,9 @@ module ConsoleAgent
       @admin_password   = nil
       @authenticate     = nil
       @safety_guards    = nil
+      @slack_bot_token  = nil
+      @slack_app_token  = nil
+      @slack_channel_ids = nil
     end
 
     def safety_guards

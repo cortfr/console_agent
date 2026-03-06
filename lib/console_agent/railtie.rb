@@ -2,6 +2,10 @@ require 'console_agent'
 
 module ConsoleAgent
   class Railtie < Rails::Railtie
+    rake_tasks do
+      load File.expand_path('../tasks/console_agent.rake', __dir__)
+    end
+
     console do
       require 'console_agent/console_methods'
 
