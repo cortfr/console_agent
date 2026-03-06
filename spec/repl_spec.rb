@@ -556,10 +556,9 @@ RSpec.describe ConsoleAgent::Repl do
         readline_count += 1
         case readline_count
         when 1
-          # Execute something that produces a large truncated result
-          repl.instance_variable_get(:@executor).store_output("full output here")
-          # The store_output above returns id 1, and we also need an omitted_output
-          repl.instance_variable_get(:@executor).instance_variable_get(:@omitted_outputs)[1] = "full omitted display"
+          # Set omitted output on the channel (where /expand reads from)
+          channel = repl.instance_variable_get(:@channel)
+          channel.instance_variable_get(:@omitted_outputs)[1] = "full omitted display"
           '/expand 1'
         when 2 then nil
         end
@@ -613,7 +612,9 @@ RSpec.describe ConsoleAgent::Repl do
         ].to_json,
         console_output: "ai> find user 123\nLooking up user 123...\n",
         input_tokens: 100,
-        output_tokens: 50
+        output_tokens: 50,
+        duration_ms: 5000,
+        model: 'claude-sonnet-4-6'
       )
     end
 

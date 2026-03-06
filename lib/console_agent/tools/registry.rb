@@ -8,9 +8,10 @@ module ConsoleAgent
       # Tools that should never be cached (side effects or user interaction)
       NO_CACHE = %w[ask_user save_memory delete_memory execute_plan].freeze
 
-      def initialize(executor: nil, mode: :default)
+      def initialize(executor: nil, mode: :default, channel: nil)
         @executor = executor
         @mode = mode
+        @channel = channel
         @definitions = []
         @handlers = {}
         @cache = {}
@@ -302,8 +303,12 @@ module ConsoleAgent
         # Ask for plan approval (unless auto-execute)
         skip_confirmations = auto
         unless auto
-          $stdout.print "\e[33m  Accept plan? [y/N/a(uto)] \e[0m"
-          answer = $stdin.gets.to_s.strip.downcase
+          if @channel
+            answer = @channel.confirm("  Accept plan? [y/N/a(uto)] ")
+          else
+            $stdout.print "\e[33m  Accept plan? [y/N/a(uto)] \e[0m"
+            answer = $stdin.gets.to_s.strip.downcase
+          end
           case answer
           when 'a', 'auto'
             skip_confirmations = true
@@ -326,8 +331,12 @@ module ConsoleAgent
 
           # Per-step confirmation (unless auto-execute or plan-level auto)
           unless skip_confirmations
-            $stdout.print "\e[33m  Run? [y/N/edit] \e[0m"
-            step_answer = $stdin.gets.to_s.strip.downcase
+            if @channel
+              step_answer = @channel.confirm("  Run? [y/N/edit] ")
+            else
+              $stdout.print "\e[33m  Run? [y/N/edit] \e[0m"
+              step_answer = $stdin.gets.to_s.strip.downcase
+            end
 
             case step_answer
             when 'e', 'edit'
@@ -335,8 +344,12 @@ module ConsoleAgent
               if edited && edited != step['code']
                 $stdout.puts "\e[33m  # Edited code:\e[0m"
                 $stdout.puts highlight_plan_code(edited)
-                $stdout.print "\e[33m  Run edited code? [y/N] \e[0m"
-                confirm = $stdin.gets.to_s.strip.downcase
+                if @channel
+                  confirm = @channel.confirm("  Run edited code? [y/N] ")
+                else
+                  $stdout.print "\e[33m  Run edited code? [y/N] \e[0m"
+                  confirm = $stdin.gets.to_s.strip.downcase
+                end
                 unless confirm == 'y' || confirm == 'yes'
                   feedback = ask_feedback("What would you like changed?")
                   results << "Step #{i + 1}: User declined after edit. Feedback: #{feedback}"
@@ -413,18 +426,26 @@ module ConsoleAgent
       end
 
       def ask_feedback(prompt)
-        $stdout.print "\e[36m  #{prompt} > \e[0m"
-        feedback = $stdin.gets
-        return '(no feedback provided)' if feedback.nil?
-        feedback.strip.empty? ? '(no feedback provided)' : feedback.strip
+        if @channel
+          @channel.prompt("  #{prompt} > ")
+        else
+          $stdout.print "\e[36m  #{prompt} > \e[0m"
+          feedback = $stdin.gets
+          return '(no feedback provided)' if feedback.nil?
+          feedback.strip.empty? ? '(no feedback provided)' : feedback.strip
+        end
       end
 
       def ask_user(question)
-        $stdout.puts "\e[36m  ? #{question}\e[0m"
-        $stdout.print "\e[36m  > \e[0m"
-        answer = $stdin.gets
-        return '(no answer provided)' if answer.nil?
-        answer.strip.empty? ? '(no answer provided)' : answer.strip
+        if @channel
+          @channel.prompt("  ? #{question}\n  > ")
+        else
+          $stdout.puts "\e[36m  ? #{question}\e[0m"
+          $stdout.print "\e[36m  > \e[0m"
+          answer = $stdin.gets
+          return '(no answer provided)' if answer.nil?
+          answer.strip.empty? ? '(no answer provided)' : answer.strip
+        end
       end
 
       def register(name:, description:, parameters:, handler:)

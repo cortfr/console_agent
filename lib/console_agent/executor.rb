@@ -46,8 +46,9 @@ module ConsoleAgent
     attr_reader :binding_context, :last_error, :last_safety_error, :last_safety_exception
     attr_accessor :on_prompt
 
-    def initialize(binding_context)
+    def initialize(binding_context, channel: nil)
       @binding_context = binding_context
+      @channel = channel
       @omitted_outputs = {}
       @omitted_counter = 0
       @output_store = {}
@@ -63,14 +64,20 @@ module ConsoleAgent
       code = extract_code(response)
       explanation = response.gsub(CODE_REGEX, '').strip
 
-      $stdout.puts
-      $stdout.puts colorize(explanation, :cyan) unless explanation.empty?
+      if @channel
+        $stdout.puts
+        @channel.display(explanation) unless explanation.empty?
+        @channel.display_code(code) unless code.empty?
+      else
+        $stdout.puts
+        $stdout.puts colorize(explanation, :cyan) unless explanation.empty?
 
-      unless code.empty?
-        $stdout.puts
-        $stdout.puts colorize("# Generated code:", :yellow)
-        $stdout.puts highlight_code(code)
-        $stdout.puts
+        unless code.empty?
+          $stdout.puts
+          $stdout.puts colorize("# Generated code:", :yellow)
+          $stdout.puts highlight_code(code)
+          $stdout.puts
+        end
       end
 
       code
@@ -162,11 +169,16 @@ module ConsoleAgent
       @last_cancelled = false
       @last_answer = nil
       prompt = execute_prompt
-      $stdout.print colorize(prompt, :yellow)
-      @on_prompt&.call
-      answer = $stdin.gets.to_s.strip.downcase
+
+      if @channel
+        answer = @channel.confirm(prompt)
+      else
+        $stdout.print colorize(prompt, :yellow)
+        @on_prompt&.call
+        answer = $stdin.gets.to_s.strip.downcase
+        echo_stdin(answer)
+      end
       @last_answer = answer
-      echo_stdin(answer)
 
       loop do
         case answer
@@ -175,16 +187,28 @@ module ConsoleAgent
           return offer_danger_retry(code) if @last_safety_error
           return result
         when 'd', 'danger'
-          $stdout.puts colorize("Executing with safety guards disabled.", :red)
+          if @channel
+            @channel.display_error("Executing with safety guards disabled.")
+          else
+            $stdout.puts colorize("Executing with safety guards disabled.", :red)
+          end
           return execute_unsafe(code)
         when 'e', 'edit'
-          edited = open_in_editor(code)
+          edited = if @channel && @channel.supports_editing?
+                     @channel.edit_code(code)
+                   else
+                     open_in_editor(code)
+                   end
           if edited && edited != code
             $stdout.puts colorize("# Edited code:", :yellow)
             $stdout.puts highlight_code(edited)
-            $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
-            edit_answer = $stdin.gets.to_s.strip.downcase
-            echo_stdin(edit_answer)
+            if @channel
+              edit_answer = @channel.confirm("Execute edited code? [y/N] ")
+            else
+              $stdout.print colorize("Execute edited code? [y/N] ", :yellow)
+              edit_answer = $stdin.gets.to_s.strip.downcase
+              echo_stdin(edit_answer)
+            end
             if edit_answer == 'y'
               return execute(edited)
             else
@@ -199,11 +223,15 @@ module ConsoleAgent
           @last_cancelled = true
           return nil
         else
-          $stdout.print colorize(prompt, :yellow)
-          @on_prompt&.call
-          answer = $stdin.gets.to_s.strip.downcase
+          if @channel
+            answer = @channel.confirm(prompt)
+          else
+            $stdout.print colorize(prompt, :yellow)
+            @on_prompt&.call
+            answer = $stdin.gets.to_s.strip.downcase
+            echo_stdin(answer)
+          end
           @last_answer = answer
-          echo_stdin(answer)
         end
       end
     end
@@ -218,13 +246,18 @@ module ConsoleAgent
         $stdout.puts colorize("  [d] re-run with all safe mode disabled", :yellow)
         $stdout.puts colorize("  [a] allow #{allow_desc} for this session", :yellow)
         $stdout.puts colorize("  [N] cancel", :yellow)
-        $stdout.print colorize("Choice: ", :yellow)
+        prompt_text = "Choice: "
       else
-        $stdout.print colorize("Re-run with safe mode disabled? [y/N] ", :yellow)
+        prompt_text = "Re-run with safe mode disabled? [y/N] "
       end
 
-      answer = $stdin.gets.to_s.strip.downcase
-      echo_stdin(answer)
+      if @channel
+        answer = @channel.confirm(prompt_text)
+      else
+        $stdout.print colorize(prompt_text, :yellow)
+        answer = $stdin.gets.to_s.strip.downcase
+        echo_stdin(answer)
+      end
 
       case answer
       when 'a', 'allow'
@@ -234,9 +267,13 @@ module ConsoleAgent
           $stdout.puts colorize("Allowed #{allow_desc} for this session.", :green)
           return execute(code)
         else
-          $stdout.puts colorize("Nothing to allow — re-run with safe mode disabled instead? [y/N]", :yellow)
-          answer = $stdin.gets.to_s.strip.downcase
-          echo_stdin(answer)
+          if @channel
+            answer = @channel.confirm("Nothing to allow — re-run with safe mode disabled instead? [y/N] ")
+          else
+            $stdout.puts colorize("Nothing to allow — re-run with safe mode disabled instead? [y/N]", :yellow)
+            answer = $stdin.gets.to_s.strip.downcase
+            echo_stdin(answer)
+          end
         end
       when 'd', 'danger', 'y', 'yes'
         $stdout.puts colorize("Executing with safety guards disabled.", :red)
@@ -307,28 +344,31 @@ module ConsoleAgent
     MAX_DISPLAY_CHARS = 2000
 
     def display_result(result)
-      full = "=> #{result.inspect}"
-      lines = full.lines
-      total_lines = lines.length
-      total_chars = full.length
-
-      if total_lines <= MAX_DISPLAY_LINES && total_chars <= MAX_DISPLAY_CHARS
-        $stdout.puts colorize(full, :green)
+      if @channel
+        @channel.display_result(result)
       else
-        # Truncate by lines first, then by chars
-        truncated = lines.first(MAX_DISPLAY_LINES).join
-        truncated = truncated[0, MAX_DISPLAY_CHARS] if truncated.length > MAX_DISPLAY_CHARS
-        $stdout.puts colorize(truncated, :green)
+        full = "=> #{result.inspect}"
+        lines = full.lines
+        total_lines = lines.length
+        total_chars = full.length
 
-        omitted_lines = [total_lines - MAX_DISPLAY_LINES, 0].max
-        omitted_chars = [total_chars - truncated.length, 0].max
-        parts = []
-        parts << "#{omitted_lines} lines" if omitted_lines > 0
-        parts << "#{omitted_chars} chars" if omitted_chars > 0
+        if total_lines <= MAX_DISPLAY_LINES && total_chars <= MAX_DISPLAY_CHARS
+          $stdout.puts colorize(full, :green)
+        else
+          truncated = lines.first(MAX_DISPLAY_LINES).join
+          truncated = truncated[0, MAX_DISPLAY_CHARS] if truncated.length > MAX_DISPLAY_CHARS
+          $stdout.puts colorize(truncated, :green)
 
-        @omitted_counter += 1
-        @omitted_outputs[@omitted_counter] = full
-        $stdout.puts colorize("  (omitting #{parts.join(', ')})  /expand #{@omitted_counter} to see all", :yellow)
+          omitted_lines = [total_lines - MAX_DISPLAY_LINES, 0].max
+          omitted_chars = [total_chars - truncated.length, 0].max
+          parts = []
+          parts << "#{omitted_lines} lines" if omitted_lines > 0
+          parts << "#{omitted_chars} chars" if omitted_chars > 0
+
+          @omitted_counter += 1
+          @omitted_outputs[@omitted_counter] = full
+          $stdout.puts colorize("  (omitting #{parts.join(', ')})  /expand #{@omitted_counter} to see all", :yellow)
+        end
       end
     end
 
