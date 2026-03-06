@@ -5,12 +5,12 @@ module ConsoleAgent
         return unless ConsoleAgent.configuration.session_logging
         return unless table_exists?
 
-        record = session_class.create!(
+        create_attrs = {
           query:         attrs[:query],
           conversation:  Array(attrs[:conversation]).to_json,
           input_tokens:  attrs[:input_tokens] || 0,
           output_tokens: attrs[:output_tokens] || 0,
-          user_name:     current_user_name,
+          user_name:     attrs[:user_name] || current_user_name,
           mode:          attrs[:mode].to_s,
           name:          attrs[:name],
           code_executed: attrs[:code_executed],
@@ -22,12 +22,23 @@ module ConsoleAgent
           model:         ConsoleAgent.configuration.resolved_model,
           duration_ms:   attrs[:duration_ms],
           created_at:    Time.respond_to?(:current) ? Time.current : Time.now
-        )
+        }
+        create_attrs[:slack_thread_ts] = attrs[:slack_thread_ts] if attrs[:slack_thread_ts]
+        record = session_class.create!(create_attrs)
         record.id
       rescue => e
         msg = "ConsoleAgent: session logging failed: #{e.class}: #{e.message}"
         $stderr.puts "\e[33m#{msg}\e[0m" if $stderr.respond_to?(:puts)
         ConsoleAgent.logger.warn(msg)
+        nil
+      end
+
+      def find_by_slack_thread(thread_ts)
+        return nil unless ConsoleAgent.configuration.session_logging
+        return nil unless table_exists?
+        session_class.where(slack_thread_ts: thread_ts).order(created_at: :desc).first
+      rescue => e
+        ConsoleAgent.logger.warn("ConsoleAgent: session lookup failed: #{e.class}: #{e.message}")
         nil
       end
 

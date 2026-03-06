@@ -141,6 +141,12 @@ module ConsoleAgent
         migrations << 'name'
       end
 
+      unless conn.column_exists?(table, :slack_thread_ts)
+        conn.add_column(table, :slack_thread_ts, :string, limit: 255)
+        conn.add_index(table, :slack_thread_ts) unless conn.index_exists?(table, :slack_thread_ts)
+        migrations << 'slack_thread_ts'
+      end
+
       if migrations.empty?
         $stdout.puts "\e[32mConsoleAgent: #{table} is up to date.\e[0m"
       else

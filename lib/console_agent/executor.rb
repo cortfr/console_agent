@@ -99,6 +99,12 @@ module ConsoleAgent
       end
 
       $stdout = old_stdout
+
+      # Send captured puts output through channel before the return value
+      if @channel && !captured_output.string.empty?
+        @channel.display_result_output(captured_output.string)
+      end
+
       display_result(result)
 
       @last_output = captured_output.string
@@ -108,13 +114,13 @@ module ConsoleAgent
       @last_error = "SafetyError: #{e.message}"
       @last_safety_error = true
       @last_safety_exception = e
-      $stderr.puts colorize("Blocked: #{e.message}", :red)
+      display_error("Blocked: #{e.message}")
       @last_output = captured_output&.string
       nil
     rescue SyntaxError => e
       $stdout = old_stdout if old_stdout
       @last_error = "SyntaxError: #{e.message}"
-      $stderr.puts colorize(@last_error, :red)
+      display_error(@last_error)
       @last_output = nil
       nil
     rescue => e
@@ -126,13 +132,13 @@ module ConsoleAgent
         @last_error = "SafetyError: #{safety_msg}"
         @last_safety_error = true
         @last_safety_exception = safety_exc
-        $stderr.puts colorize("Blocked: #{safety_msg}", :red)
+        display_error("Blocked: #{safety_msg}")
         @last_output = captured_output&.string
         return nil
       end
       @last_error = "#{e.class}: #{e.message}"
-      $stderr.puts colorize("Error: #{@last_error}", :red)
-      e.backtrace.first(3).each { |line| $stderr.puts colorize("  #{line}", :red) }
+      display_error("Error: #{@last_error}")
+      e.backtrace.first(3).each { |line| display_error("  #{line}") }
       @last_output = captured_output&.string
       nil
     end
@@ -184,9 +190,16 @@ module ConsoleAgent
         case answer
         when 'y', 'yes', 'a'
           result = execute(code)
-          return offer_danger_retry(code) if @last_safety_error
+          if @last_safety_error
+            return nil unless danger_allowed?
+            return offer_danger_retry(code)
+          end
           return result
         when 'd', 'danger'
+          unless danger_allowed?
+            display_error("Safety guards cannot be disabled in this channel.")
+            return nil
+          end
           if @channel
             @channel.display_error("Executing with safety guards disabled.")
           else
@@ -237,6 +250,8 @@ module ConsoleAgent
     end
 
     def offer_danger_retry(code)
+      return nil unless danger_allowed?
+
       exc = @last_safety_exception
       blocked_key = exc&.blocked_key
       guard = exc&.guard
@@ -286,6 +301,18 @@ module ConsoleAgent
 
     private
 
+    def danger_allowed?
+      @channel.nil? || @channel.supports_danger?
+    end
+
+    def display_error(msg)
+      if @channel
+        @channel.display_error(msg)
+      else
+        $stderr.puts colorize(msg, :red)
+      end
+    end
+
     def allow_description(guard, blocked_key)
       case guard
       when :database_writes
@@ -307,7 +334,7 @@ module ConsoleAgent
 
     def execute_prompt
       guards = ConsoleAgent.configuration.safety_guards
-      if !guards.empty? && guards.enabled?
+      if !guards.empty? && guards.enabled? && danger_allowed?
         "Execute? [y/N/edit/danger] "
       else
         "Execute? [y/N/edit] "

@@ -241,11 +241,19 @@ module ConsoleAgent
       user_id = event[:user]
       user_name = resolve_user_name(user_id)
 
+      puts "[#{channel_id}/#{thread_ts}] @#{user_name} << #{text.strip}"
+
       session = @mutex.synchronize { @sessions[thread_ts] }
+
+      if text.strip.downcase == 'cancel' || text.strip.downcase == 'stop'
+        cancel_session(session, channel_id, thread_ts)
+        return
+      end
 
       if session
         handle_thread_reply(session, text.strip)
-      elsif !event[:thread_ts]
+      else
+        # New thread, or existing thread after bot restart — start a fresh session
         start_session(channel_id, thread_ts, text.strip, user_name)
       end
     rescue => e
@@ -261,7 +269,14 @@ module ConsoleAgent
       )
 
       sandbox_binding = Object.new.instance_eval { binding }
-      engine = ConversationEngine.new(binding_context: sandbox_binding, channel: channel)
+      engine = ConversationEngine.new(
+        binding_context: sandbox_binding,
+        channel: channel,
+        slack_thread_ts: thread_ts
+      )
+
+      # Try to restore conversation history from a previous session (e.g. after bot restart)
+      restored = restore_from_db(engine, thread_ts)
 
       session = { channel: channel, engine: engine, thread: nil }
       @mutex.synchronize { @sessions[thread_ts] = session }
@@ -269,12 +284,29 @@ module ConsoleAgent
       session[:thread] = Thread.new do
         Thread.current.report_on_exception = false
         begin
+          if restored
+            puts "Restored session for thread #{thread_ts} (#{engine.history.length} messages)"
+            channel.display_dim("_(session restored — continuing from previous conversation)_")
+          end
           engine.process_message(text)
         rescue => e
           channel.display_error("Error: #{e.class}: #{e.message}")
           ConsoleAgent.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         end
       end
+    end
+
+    def restore_from_db(engine, thread_ts)
+      require 'console_agent/session_logger'
+      saved = SessionLogger.find_by_slack_thread(thread_ts)
+      return false unless saved
+
+      engine.init_interactive
+      engine.restore_session(saved)
+      true
+    rescue => e
+      ConsoleAgent.logger.warn("SlackBot: failed to restore session for #{thread_ts}: #{e.message}")
+      false
     end
 
     def handle_thread_reply(session, text)
@@ -299,6 +331,16 @@ module ConsoleAgent
       end
     end
 
+    def cancel_session(session, channel_id, thread_ts)
+      if session
+        session[:channel].cancel!
+        puts "[#{channel_id}/#{thread_ts}] cancel requested"
+      else
+        puts "[#{channel_id}/#{thread_ts}] cancel: no session"
+      end
+      @mutex.synchronize { @sessions.delete(thread_ts) }
+    end
+
     def waiting_for_reply?(channel)
       channel.instance_variable_get(:@reply_queue).num_waiting > 0
     end
@@ -318,7 +360,16 @@ module ConsoleAgent
     def resolve_user_name(user_id)
       return @user_cache[user_id] if @user_cache.key?(user_id)
 
-      result = slack_api("users.info", user: user_id)
+      # users.info requires form-encoded params, not JSON
+      uri = URI("https://slack.com/api/users.info")
+      uri.query = URI.encode_www_form(user: user_id)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+      req = Net::HTTP::Get.new(uri)
+      req["Authorization"] = "Bearer #{@bot_token}"
+      resp = http.request(req)
+      result = JSON.parse(resp.body)
+
       name = result.dig("user", "profile", "display_name")
       name = result.dig("user", "real_name") if name.nil? || name.empty?
       name = result.dig("user", "name") if name.nil? || name.empty?

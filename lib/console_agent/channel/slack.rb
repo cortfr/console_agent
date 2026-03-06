@@ -11,6 +11,17 @@ module ConsoleAgent
         @thread_ts = thread_ts
         @user_name = user_name
         @reply_queue = Queue.new
+        @cancelled = false
+        @log_prefix = "[#{@channel_id}/#{@thread_ts}] @#{@user_name}"
+        @output_log = StringIO.new
+      end
+
+      def cancel!
+        @cancelled = true
+      end
+
+      def cancelled?
+        @cancelled
       end
 
       def display(text)
@@ -33,7 +44,15 @@ module ConsoleAgent
         post("```#{strip_ansi(code)}```")
       end
 
+      def display_result_output(output)
+        text = strip_ansi(output).strip
+        return if text.empty?
+        text = text[0, 3000] + "\n... (truncated)" if text.length > 3000
+        post("```#{text}```")
+      end
+
       def display_result(result)
+        return if result.nil?
         text = "=> #{result.inspect}"
         if text.length > 3000
           text = text[0, 3000] + "\n... (truncated)"
@@ -58,6 +77,10 @@ module ConsoleAgent
         'slack'
       end
 
+      def supports_danger?
+        false
+      end
+
       def supports_editing?
         false
       end
@@ -66,20 +89,26 @@ module ConsoleAgent
         yield
       end
 
+      def log_input(text)
+        @output_log.write("@#{@user_name}: #{text}\n")
+      end
+
       # Called by SlackBot when a thread reply arrives
       def receive_reply(text)
+        @output_log.write("@#{@user_name}: #{text}\n")
         @reply_queue.push(text)
       end
 
-      # Not applicable to Slack
       def console_capture_string
-        nil
+        @output_log.string
       end
 
       private
 
       def post(text)
         return if text.nil? || text.strip.empty?
+        @output_log.write("#{text}\n")
+        $stdout.puts "#{@log_prefix} >> #{truncate_log(text)}"
         @slack_bot.send(:post_message,
           channel: @channel_id,
           thread_ts: @thread_ts,
@@ -87,6 +116,11 @@ module ConsoleAgent
         )
       rescue => e
         ConsoleAgent.logger.error("Slack post failed: #{e.message}")
+      end
+
+      def truncate_log(text)
+        flat = text.to_s.gsub("\n", "\\n")
+        flat.length > 200 ? flat[0, 200] + "..." : flat
       end
 
       def strip_ansi(text)

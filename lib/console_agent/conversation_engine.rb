@@ -5,9 +5,10 @@ module ConsoleAgent
 
     RECENT_OUTPUTS_TO_KEEP = 2
 
-    def initialize(binding_context:, channel:)
+    def initialize(binding_context:, channel:, slack_thread_ts: nil)
       @binding_context = binding_context
       @channel = channel
+      @slack_thread_ts = slack_thread_ts
       @executor = Executor.new(binding_context, channel: channel)
       @provider = nil
       @context_builder = nil
@@ -100,6 +101,9 @@ module ConsoleAgent
     end
 
     def process_message(text)
+      # Initialize interactive state if not already set (first message in session)
+      init_interactive unless @interactive_start
+      @channel.log_input(text) if @channel.respond_to?(:log_input)
       @interactive_query ||= text
       @history << { role: :user, content: text }
 
@@ -255,6 +259,7 @@ module ConsoleAgent
       end
 
       track_usage(result)
+      return :cancelled if @channel.cancelled?
       code = @executor.display_response(result.text)
       display_usage(result, show_session: true)
 
@@ -264,6 +269,7 @@ module ConsoleAgent
       @history << { role: :assistant, content: result.text }
 
       return :no_code unless code && !code.strip.empty?
+      return :cancelled if @channel.cancelled?
 
       exec_result = if ConsoleAgent.configuration.auto_execute
                       @executor.execute(code)
@@ -486,13 +492,16 @@ module ConsoleAgent
       if @interactive_session_id
         SessionLogger.update(@interactive_session_id, session_attrs)
       else
-        @interactive_session_id = SessionLogger.log(
-          session_attrs.merge(
-            query: @interactive_query || '(interactive session)',
-            mode:  'interactive',
-            name:  @session_name
-          )
+        log_attrs = session_attrs.merge(
+          query: @interactive_query || '(interactive session)',
+          mode:  @slack_thread_ts ? 'slack' : 'interactive',
+          name:  @session_name
         )
+        log_attrs[:slack_thread_ts] = @slack_thread_ts if @slack_thread_ts
+        if @channel.user_identity
+          log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
+        end
+        @interactive_session_id = SessionLogger.log(log_attrs)
       end
     end
 
@@ -513,17 +522,22 @@ module ConsoleAgent
           duration_ms:   duration_ms
         )
       elsif @interactive_query
-        log_session(
+        log_attrs = {
           query: @interactive_query,
           conversation: @history,
-          mode: 'interactive',
+          mode: @slack_thread_ts ? 'slack' : 'interactive',
           code_executed: @last_interactive_code,
           code_output: @last_interactive_output,
           code_result: @last_interactive_result,
           executed: @last_interactive_executed,
           console_output: @channel.respond_to?(:console_capture_string) ? @channel.console_capture_string : nil,
           start_time: @interactive_start
-        )
+        }
+        log_attrs[:slack_thread_ts] = @slack_thread_ts if @slack_thread_ts
+        if @channel.user_identity
+          log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
+        end
+        log_session(log_attrs)
       end
     end
 
@@ -654,6 +668,11 @@ module ConsoleAgent
       exhausted = false
 
       max_rounds.times do |round|
+        if @channel.cancelled?
+          @channel.display_dim("  Cancelled.")
+          break
+        end
+
         if round == 0
           @channel.display_dim("  Thinking...")
         else
@@ -679,6 +698,8 @@ module ConsoleAgent
         total_input += result.input_tokens || 0
         total_output += result.output_tokens || 0
 
+        break if @channel.cancelled?
+
         if ConsoleAgent.configuration.debug
           debug_post_call(round, result, @total_input_tokens + total_input, @total_output_tokens + total_output)
         end
@@ -693,6 +714,7 @@ module ConsoleAgent
 
         last_tool_names = result.tool_calls.map { |tc| tc[:name] }
         result.tool_calls.each do |tc|
+          break if @channel.cancelled?
           if tc[:name] == 'ask_user' || tc[:name] == 'execute_plan'
             tool_result = tools.execute(tc[:name], tc[:arguments])
           else
