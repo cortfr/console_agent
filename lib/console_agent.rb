@@ -70,7 +70,7 @@ module ConsoleAgent
       lines << "  Model:          #{c.resolved_model}"
       lines << "  API key:        #{masked_key}"
       lines << "  Local URL:      #{c.local_url}" if c.provider == :local
-      lines << "  Max tokens:     #{c.max_tokens}"
+      lines << "  Max tokens:     #{c.max_tokens || '(auto)'}"
       lines << "  Temperature:    #{c.temperature}"
       lines << "  Timeout:        #{c.timeout}s"
       lines << "  Max tool rounds:#{c.max_tool_rounds}"

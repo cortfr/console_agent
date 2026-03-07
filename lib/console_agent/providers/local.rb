@@ -26,12 +26,22 @@ module ConsoleAgent
         }
         body[:tools] = tools.to_openai_format if tools
 
+        estimated_input_tokens = estimate_tokens(formatted, system_prompt, tools)
+
         json_body = JSON.generate(body)
         debug_request("#{base_url}/v1/chat/completions", body)
         response = conn.post('/v1/chat/completions', json_body)
         debug_response(response.body)
         data = parse_response(response)
         usage = data['usage'] || {}
+
+        prompt_tokens = usage['prompt_tokens']
+        if prompt_tokens && estimated_input_tokens > 0 && prompt_tokens < estimated_input_tokens * 0.5
+          raise ProviderError,
+            "Context truncated by local server: sent ~#{estimated_input_tokens} estimated tokens " \
+            "but server only used #{prompt_tokens}. Increase the model's context window " \
+            "(e.g. num_ctx for Ollama) or reduce conversation length."
+        end
 
         choice = (data['choices'] || []).first || {}
         message = choice['message'] || {}
@@ -61,6 +71,13 @@ module ConsoleAgent
           tool_calls: tool_calls,
           stop_reason: stop
         )
+      end
+
+      def estimate_tokens(messages, system_prompt, tools)
+        chars = system_prompt.to_s.length
+        messages.each { |m| chars += m[:content].to_s.length + (m[:tool_calls].to_s.length) }
+        chars += tools.to_openai_format.to_s.length if tools
+        chars / 4
       end
 
       # Parse tool calls emitted as JSON text in the content field.
