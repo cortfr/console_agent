@@ -1,5 +1,5 @@
 ConsoleAgent.configure do |config|
-  # LLM provider: :anthropic or :openai
+  # LLM provider: :anthropic, :openai, or :local
   config.provider = :anthropic
 
   # API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
@@ -22,6 +22,12 @@ ConsoleAgent.configure do |config|
 
   # HTTP timeout in seconds
   config.timeout = 30
+
+  # Local model provider (Ollama, vLLM, or any OpenAI-compatible server):
+  # config.provider = :local
+  # config.local_url = 'http://localhost:11434'
+  # config.local_model = 'qwen2.5:7b'
+  # config.local_api_key = nil
 
   # Debug mode: prints full API requests/responses and tool calls to stderr
   # config.debug = true

@@ -29,6 +29,12 @@ RSpec.describe ConsoleAgent::Configuration do
     end
   end
 
+  describe 'PROVIDERS' do
+    it 'includes :local' do
+      expect(ConsoleAgent::Configuration::PROVIDERS).to include(:local)
+    end
+  end
+
   describe '#resolved_api_key' do
     it 'returns api_key when set explicitly' do
       config.api_key = 'test-key'
@@ -51,6 +57,17 @@ RSpec.describe ConsoleAgent::Configuration do
       allow(ENV).to receive(:[]).and_return(nil)
       expect(config.resolved_api_key).to be_nil
     end
+
+    it "returns 'no-key' for local provider without api key" do
+      config.provider = :local
+      expect(config.resolved_api_key).to eq('no-key')
+    end
+
+    it 'returns local_api_key when set for local provider' do
+      config.provider = :local
+      config.local_api_key = 'my-local-key'
+      expect(config.resolved_api_key).to eq('my-local-key')
+    end
   end
 
   describe '#resolved_model' do
@@ -67,6 +84,11 @@ RSpec.describe ConsoleAgent::Configuration do
     it 'returns default model for openai' do
       config.provider = :openai
       expect(config.resolved_model).to eq('gpt-5.3-codex')
+    end
+
+    it 'returns local_model for local provider' do
+      config.provider = :local
+      expect(config.resolved_model).to eq('qwen2.5:7b')
     end
   end
 
@@ -139,6 +161,19 @@ RSpec.describe ConsoleAgent::Configuration do
     it 'does not raise when API key is set' do
       config.api_key = 'test-key'
       expect { config.validate! }.not_to raise_error
+    end
+
+    it 'passes for :local without API key' do
+      config.provider = :local
+      expect { config.validate! }.not_to raise_error
+    end
+
+    it 'raises for :local when local_url is empty' do
+      config.provider = :local
+      config.local_url = ''
+      expect { config.validate! }.to raise_error(
+        ConsoleAgent::ConfigurationError, /local_url/
+      )
     end
   end
 end

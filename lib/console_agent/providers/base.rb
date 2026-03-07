@@ -30,8 +30,9 @@ module ConsoleAgent
 
       def build_connection(url, headers = {})
         Faraday.new(url: url) do |f|
-          f.options.timeout = config.timeout
-          f.options.open_timeout = config.timeout
+          t = config.respond_to?(:resolved_timeout) ? config.resolved_timeout : config.timeout
+          f.options.timeout = t
+          f.options.open_timeout = t
           f.headers.update(headers)
           f.headers['Content-Type'] = 'application/json'
           f.adapter Faraday.default_adapter
@@ -101,6 +102,10 @@ module ConsoleAgent
       when :openai
         require 'console_agent/providers/openai'
         OpenAI.new(config)
+      when :local
+        require 'console_agent/providers/openai'
+        require 'console_agent/providers/local'
+        Local.new(config)
       else
         raise ConfigurationError, "Unknown provider: #{config.provider}"
       end

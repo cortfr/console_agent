@@ -58,8 +58,8 @@ module ConsoleAgent
     def status
       c = configuration
       key = c.resolved_api_key
-      masked_key = if key.nil? || key.empty?
-                     "\e[31m(not set)\e[0m"
+      masked_key = if key.nil? || key.empty? || key == 'no-key'
+                     c.provider == :local ? "\e[32m(not required)\e[0m" : "\e[31m(not set)\e[0m"
                    else
                      key[0..6] + '...' + key[-4..-1]
                    end
@@ -69,6 +69,7 @@ module ConsoleAgent
       lines << "  Provider:       #{c.provider}"
       lines << "  Model:          #{c.resolved_model}"
       lines << "  API key:        #{masked_key}"
+      lines << "  Local URL:      #{c.local_url}" if c.provider == :local
       lines << "  Max tokens:     #{c.max_tokens}"
       lines << "  Temperature:    #{c.temperature}"
       lines << "  Timeout:        #{c.timeout}s"

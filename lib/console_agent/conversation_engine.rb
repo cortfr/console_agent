@@ -352,6 +352,7 @@ module ConsoleAgent
 
       @token_usage.each do |model, usage|
         pricing = Configuration::PRICING[model]
+        pricing ||= { input: 0.0, output: 0.0 } if ConsoleAgent.configuration.provider == :local
         input_str = "in: #{format_tokens(usage[:input])}"
         output_str = "out: #{format_tokens(usage[:output])}"
 
@@ -995,6 +996,7 @@ module ConsoleAgent
       output_t = result.output_tokens || 0
       model = ConsoleAgent.configuration.resolved_model
       pricing = Configuration::PRICING[model]
+      pricing ||= { input: 0.0, output: 0.0 } if ConsoleAgent.configuration.provider == :local
 
       parts = ["in: #{format_tokens(input_t)}", "out: #{format_tokens(output_t)}"]
 

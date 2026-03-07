@@ -1,6 +1,6 @@
 module ConsoleAgent
   class Configuration
-    PROVIDERS = %i[anthropic openai].freeze
+    PROVIDERS = %i[anthropic openai local].freeze
 
     PRICING = {
       'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
@@ -21,7 +21,8 @@ module ConsoleAgent
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
                   :authenticate,
-                  :slack_bot_token, :slack_app_token, :slack_channel_ids
+                  :slack_bot_token, :slack_app_token, :slack_channel_ids,
+                  :local_url, :local_model, :local_api_key
 
     def initialize
       @provider     = :anthropic
@@ -45,6 +46,9 @@ module ConsoleAgent
       @slack_bot_token  = nil
       @slack_app_token  = nil
       @slack_channel_ids = nil
+      @local_url        = 'http://localhost:11434'
+      @local_model      = 'qwen2.5:7b'
+      @local_api_key    = nil
     end
 
     def safety_guards
@@ -100,6 +104,8 @@ module ConsoleAgent
         ENV['ANTHROPIC_API_KEY']
       when :openai
         ENV['OPENAI_API_KEY']
+      when :local
+        @local_api_key || 'no-key'
       end
     end
 
@@ -111,6 +117,8 @@ module ConsoleAgent
         'claude-sonnet-4-6'
       when :openai
         'gpt-5.3-codex'
+      when :local
+        @local_model
       end
     end
 
@@ -128,7 +136,13 @@ module ConsoleAgent
         'claude-opus-4-6'
       when :openai
         'gpt-5.3-codex'
+      when :local
+        @local_model
       end
+    end
+
+    def resolved_timeout
+      @provider == :local ? [@timeout, 300].max : @timeout
     end
 
     def validate!
@@ -136,9 +150,13 @@ module ConsoleAgent
         raise ConfigurationError, "Unknown provider: #{@provider}. Valid: #{PROVIDERS.join(', ')}"
       end
 
-      unless resolved_api_key
-        env_var = @provider == :anthropic ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
-        raise ConfigurationError, "No API key. Set config.api_key or #{env_var} env var."
+      if @provider == :local
+        raise ConfigurationError, "No local_url configured for :local provider." unless @local_url && !@local_url.empty?
+      else
+        unless resolved_api_key
+          env_var = @provider == :anthropic ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
+          raise ConfigurationError, "No API key. Set config.api_key or #{env_var} env var."
+        end
       end
     end
   end
