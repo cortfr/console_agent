@@ -89,6 +89,22 @@ module ConsoleAgent
         yield
       end
 
+      def system_instructions
+        <<~INSTRUCTIONS.strip
+          ## Response Formatting (Slack Channel)
+
+          You are responding to non-technical users in Slack. Follow these rules:
+
+          - Format results as readable tables using Slack markdown, NOT raw Ruby objects or arrays
+          - Use `puts` with formatted output instead of returning arrays or hashes
+          - Summarize findings in plain, simple language
+          - Do NOT show technical details like SQL queries, token counts, or class names
+          - Keep explanations simple and jargon-free
+          - When showing records, format as a clean table with headers and aligned columns
+          - Never return raw Ruby objects — always present data in a human-readable way
+        INSTRUCTIONS
+      end
+
       def log_input(text)
         @output_log.write("@#{@user_name}: #{text}\n")
       end
@@ -108,7 +124,7 @@ module ConsoleAgent
       def post(text)
         return if text.nil? || text.strip.empty?
         @output_log.write("#{text}\n")
-        $stdout.puts "#{@log_prefix} >> #{truncate_log(text)}"
+        $stdout.puts "#{@log_prefix} >> #{text}"
         @slack_bot.send(:post_message,
           channel: @channel_id,
           thread_ts: @thread_ts,
@@ -116,11 +132,6 @@ module ConsoleAgent
         )
       rescue => e
         ConsoleAgent.logger.error("Slack post failed: #{e.message}")
-      end
-
-      def truncate_log(text)
-        flat = text.to_s.gsub("\n", "\\n")
-        flat.length > 200 ? flat[0, 200] + "..." : flat
       end
 
       def strip_ansi(text)

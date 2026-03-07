@@ -17,6 +17,7 @@ module ConsoleAgent
       def supports_editing?;        false; end
       def edit_code(code);          code; end
       def wrap_llm_call(&block);    yield; end
+      def system_instructions;      nil; end
     end
   end
 end

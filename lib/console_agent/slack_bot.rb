@@ -390,6 +390,17 @@ module ConsoleAgent
                        "all channels"
                      end
       puts "ConsoleAgent SlackBot started (#{channel_info}, bot: #{@bot_user_id})"
+
+      channel = Channel::Slack.new(slack_bot: self, channel_id: "boot", thread_ts: "boot")
+      engine = ConversationEngine.new(
+        binding_context: Object.new.instance_eval { binding },
+        channel: channel
+      )
+      puts "\nFull system prompt for Slack sessions:"
+      puts "-" * 60
+      puts engine.context
+      puts "-" * 60
+      puts
     end
   end
 end

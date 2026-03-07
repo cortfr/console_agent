@@ -389,6 +389,7 @@ module ConsoleAgent
       base = @context_base ||= context_builder.build
       parts = [base]
       parts << safety_context
+      parts << @channel.system_instructions
       parts << binding_variable_summary
       parts.compact.join("\n\n")
     end
