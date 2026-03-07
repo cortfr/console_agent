@@ -292,6 +292,8 @@ module ConsoleAgent
         rescue => e
           channel.display_error("Error: #{e.class}: #{e.message}")
           ConsoleAgent.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+        ensure
+          ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
       end
     end
@@ -327,6 +329,8 @@ module ConsoleAgent
         rescue => e
           channel.display_error("Error: #{e.class}: #{e.message}")
           ConsoleAgent.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+        ensure
+          ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
         end
       end
     end
