@@ -21,7 +21,7 @@ module ConsoleAgent
                   :session_logging, :connection_class,
                   :admin_username, :admin_password,
                   :authenticate,
-                  :slack_bot_token, :slack_app_token, :slack_channel_ids,
+                  :slack_bot_token, :slack_app_token, :slack_channel_ids, :slack_allowed_usernames,
                   :local_url, :local_model, :local_api_key
 
     def initialize
@@ -46,6 +46,7 @@ module ConsoleAgent
       @slack_bot_token  = nil
       @slack_app_token  = nil
       @slack_channel_ids = nil
+      @slack_allowed_usernames = nil
       @local_url        = 'http://localhost:11434'
       @local_model      = 'qwen2.5:7b'
       @local_api_key    = nil

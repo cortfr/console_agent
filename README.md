@@ -232,6 +232,9 @@ ConsoleAgent.configure do |config|
 
   # Optional: restrict to specific Slack channel IDs
   # config.slack_channel_ids = 'C1234567890,C0987654321'
+
+  # Required: which users the bot responds to (by display name)
+  config.slack_allowed_usernames = ['alice', 'bob']  # or 'ALL' for everyone
 end
 ```
 

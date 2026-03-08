@@ -29,6 +29,10 @@ ConsoleAgent.configure do |config|
   # config.local_model = 'qwen2.5:7b'
   # config.local_api_key = nil
 
+  # Slack: which users the bot responds to (required for Slack mode)
+  # config.slack_allowed_usernames = ['alice', 'bob']  # specific users
+  # config.slack_allowed_usernames = 'ALL'              # everyone
+
   # Debug mode: prints full API requests/responses and tool calls to stderr
   # config.debug = true
 

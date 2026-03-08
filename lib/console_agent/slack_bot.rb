@@ -17,6 +17,7 @@ module ConsoleAgent
 
       raise ConfigurationError, "SLACK_BOT_TOKEN is required" unless @bot_token
       raise ConfigurationError, "SLACK_APP_TOKEN is required (Socket Mode)" unless @app_token
+      raise ConfigurationError, "slack_allowed_usernames must be configured (e.g. ['alice'] or 'ALL')" unless ConsoleAgent.configuration.slack_allowed_usernames
 
       @bot_user_id = nil
       @sessions = {}       # thread_ts → { channel:, engine:, thread: }
@@ -240,6 +241,13 @@ module ConsoleAgent
       thread_ts = event[:thread_ts] || event[:ts]
       user_id = event[:user]
       user_name = resolve_user_name(user_id)
+
+      allowed_list = Array(ConsoleAgent.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
+      unless allowed_list.include?('all') || allowed_list.include?(user_name.to_s.downcase)
+        puts "[#{channel_id}/#{thread_ts}] @#{user_name} << (ignored — not in allowed usernames)"
+        post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{user_name}). Ask an admin to add you to the allowed usernames list.")
+        return
+      end
 
       puts "[#{channel_id}/#{thread_ts}] @#{user_name} << #{text.strip}"
 
