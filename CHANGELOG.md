@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0]
+
+- Add Slack channel integration with system instructions and connection pooling
+- Extract channels abstraction and ConversationEngine from Repl
+- Add built-in safety guards with `/danger` bypass and progressive safety allowlists
+- Add local model support with prompt truncation warnings
+- Add `clear!` command to clear bot messages in thread
+- Match code blocks in LLM results
+- Fix long query display and add cost tracking to session viewer
+- Strip quotes from session names when saving
+
 ## [0.10.0]
 
 - Add `/expand` command to view previous results
