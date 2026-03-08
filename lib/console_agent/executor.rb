@@ -60,9 +60,12 @@ module ConsoleAgent
       match ? match[1].strip : ''
     end
 
+    # Matches any fenced code block (```anything ... ```)
+    ANY_CODE_FENCE_REGEX = /```\w*\s*\n.*?```/m
+
     def display_response(response)
       code = extract_code(response)
-      explanation = response.gsub(CODE_REGEX, '').strip
+      explanation = response.gsub(ANY_CODE_FENCE_REGEX, '').strip
 
       if @channel
         $stdout.puts
