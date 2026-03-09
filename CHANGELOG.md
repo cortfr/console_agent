@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.0]
+
+- Add `config.code_search_paths` to configure searchable code directories
+
 ## [0.14.0]
 
 - Change module name from `RailsConsoleAI` to `RailsConsoleAi`
