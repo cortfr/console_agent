@@ -33,6 +33,11 @@ ConsoleAgent.configure do |config|
   # config.slack_allowed_usernames = ['alice', 'bob']  # specific users
   # config.slack_allowed_usernames = 'ALL'              # everyone
 
+  # AWS Bedrock provider (uses AWS credential chain — no API key needed):
+  # config.provider = :bedrock
+  # config.bedrock_region = 'us-east-1'
+  # config.model = 'us.anthropic.claude-sonnet-4-6'
+
   # Debug mode: prints full API requests/responses and tool calls to stderr
   # config.debug = true
 

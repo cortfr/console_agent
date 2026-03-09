@@ -66,6 +66,18 @@ module ConsoleAgent
         end
       end
 
+      def to_bedrock_format
+        definitions.map do |d|
+          {
+            tool_spec: {
+              name: d[:name],
+              description: d[:description],
+              input_schema: { json: d[:parameters] }
+            }
+          }
+        end
+      end
+
       def to_openai_format
         definitions.map do |d|
           {

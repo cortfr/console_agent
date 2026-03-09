@@ -106,6 +106,9 @@ module ConsoleAgent
         require 'console_agent/providers/openai'
         require 'console_agent/providers/local'
         Local.new(config)
+      when :bedrock
+        require 'console_agent/providers/bedrock'
+        Bedrock.new(config)
       else
         raise ConfigurationError, "Unknown provider: #{config.provider}"
       end

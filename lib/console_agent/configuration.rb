@@ -1,11 +1,14 @@
 module ConsoleAgent
   class Configuration
-    PROVIDERS = %i[anthropic openai local].freeze
+    PROVIDERS = %i[anthropic openai local bedrock].freeze
 
     PRICING = {
       'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
       'claude-opus-4-6'   => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000 },
       'claude-haiku-4-5-20251001' => { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
+      # Bedrock model IDs (same pricing as direct API)
+      'us.anthropic.claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+      'us.anthropic.claude-opus-4-6-v1' => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000 },
     }.freeze
 
     DEFAULT_MAX_TOKENS = {
@@ -22,7 +25,8 @@ module ConsoleAgent
                   :admin_username, :admin_password,
                   :authenticate,
                   :slack_bot_token, :slack_app_token, :slack_channel_ids, :slack_allowed_usernames,
-                  :local_url, :local_model, :local_api_key
+                  :local_url, :local_model, :local_api_key,
+                  :bedrock_region
 
     def initialize
       @provider     = :anthropic
@@ -50,6 +54,7 @@ module ConsoleAgent
       @local_url        = 'http://localhost:11434'
       @local_model      = 'qwen2.5:7b'
       @local_api_key    = nil
+      @bedrock_region   = nil
     end
 
     def safety_guards
@@ -107,6 +112,8 @@ module ConsoleAgent
         ENV['OPENAI_API_KEY']
       when :local
         @local_api_key || 'no-key'
+      when :bedrock
+        'aws-sdk'
       end
     end
 
@@ -120,6 +127,8 @@ module ConsoleAgent
         'gpt-5.3-codex'
       when :local
         @local_model
+      when :bedrock
+        'us.anthropic.claude-sonnet-4-6'
       end
     end
 
@@ -139,6 +148,8 @@ module ConsoleAgent
         'gpt-5.3-codex'
       when :local
         @local_model
+      when :bedrock
+        'us.anthropic.claude-opus-4-6-v1'
       end
     end
 
@@ -153,6 +164,13 @@ module ConsoleAgent
 
       if @provider == :local
         raise ConfigurationError, "No local_url configured for :local provider." unless @local_url && !@local_url.empty?
+      elsif @provider == :bedrock
+        begin
+          require 'aws-sdk-bedrockruntime'
+        rescue LoadError
+          raise ConfigurationError,
+            "aws-sdk-bedrockruntime gem is required for the :bedrock provider. Add it to your Gemfile."
+        end
       else
         unless resolved_api_key
           env_var = @provider == :anthropic ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
