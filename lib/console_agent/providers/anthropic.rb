@@ -54,8 +54,16 @@ module ConsoleAgent
           temperature: config.temperature,
           messages: format_messages(messages)
         }
-        body[:system] = system_prompt if system_prompt
-        body[:tools] = tools.to_anthropic_format if tools
+        if system_prompt
+          body[:system] = [
+            { 'type' => 'text', 'text' => system_prompt, 'cache_control' => { 'type' => 'ephemeral' } }
+          ]
+        end
+        if tools
+          anthropic_tools = tools.to_anthropic_format
+          anthropic_tools.last['cache_control'] = { 'type' => 'ephemeral' } if anthropic_tools.any?
+          body[:tools] = anthropic_tools
+        end
 
         json_body = JSON.generate(body)
         debug_request("#{API_URL}/v1/messages", body)
@@ -71,6 +79,8 @@ module ConsoleAgent
           text: extract_text(data),
           input_tokens: usage['input_tokens'],
           output_tokens: usage['output_tokens'],
+          cache_read_input_tokens: usage['cache_read_input_tokens'],
+          cache_write_input_tokens: usage['cache_creation_input_tokens'],
           tool_calls: tool_calls,
           stop_reason: stop
         )

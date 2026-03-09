@@ -358,8 +358,18 @@ module ConsoleAgent
 
         if pricing
           cost = (usage[:input] * pricing[:input]) + (usage[:output] * pricing[:output])
+          cache_read = usage[:cache_read] || 0
+          cache_write = usage[:cache_write] || 0
+          if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
+            # Subtract cached tokens from full-price input, add at cache rates
+            cost -= cache_read * pricing[:input]
+            cost += cache_read * pricing[:cache_read]
+            cost += cache_write * (pricing[:cache_write] - pricing[:input])
+          end
           total_cost += cost
-          $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}  ~$#{'%.2f' % cost}\e[0m"
+          cache_str = ""
+          cache_str = "  cache r: #{format_tokens(cache_read)} w: #{format_tokens(cache_write)}" if cache_read > 0 || cache_write > 0
+          $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}#{cache_str}  ~$#{'%.2f' % cost}\e[0m"
         else
           $stdout.puts "\e[2m    #{model}:  #{input_str}  #{output_str}  (pricing unknown)\e[0m"
         end
@@ -799,6 +809,8 @@ module ConsoleAgent
       model = ConsoleAgent.configuration.resolved_model
       @token_usage[model][:input] += result.input_tokens || 0
       @token_usage[model][:output] += result.output_tokens || 0
+      @token_usage[model][:cache_read] = (@token_usage[model][:cache_read] || 0) + (result.cache_read_input_tokens || 0)
+      @token_usage[model][:cache_write] = (@token_usage[model][:cache_write] || 0) + (result.cache_write_input_tokens || 0)
     end
 
     def display_usage(result, show_session: false)
@@ -998,10 +1010,18 @@ module ConsoleAgent
       pricing = Configuration::PRICING[model]
       pricing ||= { input: 0.0, output: 0.0 } if ConsoleAgent.configuration.provider == :local
 
+      cache_r = result.cache_read_input_tokens || 0
+      cache_w = result.cache_write_input_tokens || 0
       parts = ["in: #{format_tokens(input_t)}", "out: #{format_tokens(output_t)}"]
+      parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
 
       if pricing
         cost = (input_t * pricing[:input]) + (output_t * pricing[:output])
+        if (cache_r > 0 || cache_w > 0) && pricing[:cache_read]
+          cost -= cache_r * pricing[:input]
+          cost += cache_r * pricing[:cache_read]
+          cost += cache_w * (pricing[:cache_write] - pricing[:input])
+        end
         session_cost = (total_input * pricing[:input]) + (total_output * pricing[:output])
         parts << "~$#{'%.4f' % cost}"
         $stderr.puts "#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"

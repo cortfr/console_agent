@@ -84,7 +84,8 @@ module ConsoleAgent
 
     class ProviderError < StandardError; end
 
-    ChatResult = Struct.new(:text, :input_tokens, :output_tokens, :tool_calls, :stop_reason, keyword_init: true) do
+    ChatResult = Struct.new(:text, :input_tokens, :output_tokens, :tool_calls, :stop_reason,
+                            :cache_read_input_tokens, :cache_write_input_tokens, keyword_init: true) do
       def total_tokens
         (input_tokens || 0) + (output_tokens || 0)
       end

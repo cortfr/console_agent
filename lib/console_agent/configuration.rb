@@ -2,13 +2,14 @@ module ConsoleAgent
   class Configuration
     PROVIDERS = %i[anthropic openai local bedrock].freeze
 
+    # cache_read: 0.1x input, cache_write: 1.25x input for Anthropic models
     PRICING = {
-      'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
-      'claude-opus-4-6'   => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000 },
-      'claude-haiku-4-5-20251001' => { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
+      'claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000, cache_read: 0.30 / 1_000_000, cache_write: 3.75 / 1_000_000 },
+      'claude-opus-4-6'   => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000, cache_read: 1.50 / 1_000_000, cache_write: 18.75 / 1_000_000 },
+      'claude-haiku-4-5-20251001' => { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000, cache_read: 0.08 / 1_000_000, cache_write: 1.0 / 1_000_000 },
       # Bedrock model IDs (same pricing as direct API)
-      'us.anthropic.claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
-      'us.anthropic.claude-opus-4-6-v1' => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000 },
+      'us.anthropic.claude-sonnet-4-6' => { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000, cache_read: 0.30 / 1_000_000, cache_write: 3.75 / 1_000_000 },
+      'us.anthropic.claude-opus-4-6-v1' => { input: 15.0 / 1_000_000, output: 75.0 / 1_000_000, cache_read: 1.50 / 1_000_000, cache_write: 18.75 / 1_000_000 },
     }.freeze
 
     DEFAULT_MAX_TOKENS = {
