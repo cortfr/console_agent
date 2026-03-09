@@ -5,24 +5,6 @@ module RailsConsoleAi
     class Slack < Base
       ANSI_REGEX = /\e\[[0-9;]*m/
 
-      THINKING_MESSAGES = [
-        "Thinking...",
-        "Reticulating splines...",
-        "Scrubbing encryption bits...",
-        "Consulting the oracle...",
-        "Rummaging through the database...",
-        "Warming up the hamster wheel...",
-        "Polishing the pixels...",
-        "Untangling the spaghetti code...",
-        "Asking the magic 8-ball...",
-        "Counting all the things...",
-        "Herding the electrons...",
-        "Dusting off the old records...",
-        "Feeding the algorithms...",
-        "Shaking the data tree...",
-        "Bribing the servers...",
-      ].freeze
-
       def initialize(slack_bot:, channel_id:, thread_ts:, user_name: nil)
         @slack_bot = slack_bot
         @channel_id = channel_id
@@ -32,7 +14,6 @@ module RailsConsoleAi
         @cancelled = false
         @log_prefix = "[#{@channel_id}/#{@thread_ts}] @#{@user_name}"
         @output_log = StringIO.new
-        @thinking_ts = nil
       end
 
       def cancel!
@@ -44,30 +25,34 @@ module RailsConsoleAi
       end
 
       def display(text)
-        clear_thinking
         post(strip_ansi(text))
       end
 
       def display_dim(text)
-        stripped = strip_ansi(text).strip
-        if stripped =~ /\AThinking\.\.\.|\ACalling LLM/
-          show_thinking
-        elsif stripped =~ /\AAttempting to fix|\ACancelled|\A_session:/
+        raw = strip_ansi(text)
+        stripped = raw.strip
+
+        if stripped =~ /\AThinking\.\.\.|\AAttempting to fix|\ACancelled|\A_session:/
+          post(stripped)
+        elsif stripped =~ /\ACalling LLM/
+          # Technical LLM round status — suppress in Slack
+          @output_log.write("#{stripped}\n")
+          $stdout.puts "#{@log_prefix} (dim) #{stripped}"
+        elsif raw =~ /\A {2,4}\S/ && stripped.length > 10
+          # LLM thinking text (2-space indent from conversation engine) — show as status
           post(stripped)
         else
-          # Log for engineers but don't post to Slack
+          # Tool result previews (5+ space indent) and other technical noise — log only
           @output_log.write("#{stripped}\n")
           $stdout.puts "#{@log_prefix} (dim) #{stripped}"
         end
       end
 
       def display_warning(text)
-        clear_thinking
         post(":warning: #{strip_ansi(text)}")
       end
 
       def display_error(text)
-        clear_thinking
         post(":x: #{strip_ansi(text)}")
       end
 
@@ -77,7 +62,6 @@ module RailsConsoleAi
       end
 
       def display_result_output(output)
-        clear_thinking
         text = strip_ansi(output).strip
         return if text.empty?
         text = text[0, 3000] + "\n... (truncated)" if text.length > 3000
@@ -174,42 +158,6 @@ module RailsConsoleAi
         )
       rescue => e
         RailsConsoleAi.logger.error("Slack post failed: #{e.message}")
-      end
-
-      def show_thinking
-        msg = THINKING_MESSAGES.sample
-        if @thinking_ts
-          # Update the existing thinking message in place
-          @slack_bot.send(:slack_api, "chat.update",
-            channel: @channel_id,
-            ts: @thinking_ts,
-            text: msg
-          )
-        else
-          # Post a new thinking message and track its ts
-          result = @slack_bot.send(:post_message,
-            channel: @channel_id,
-            thread_ts: @thread_ts,
-            text: msg
-          )
-          @thinking_ts = result&.dig("ts")
-        end
-        $stdout.puts "#{@log_prefix} >> #{msg}"
-      rescue => e
-        RailsConsoleAi.logger.error("Slack thinking message failed: #{e.message}")
-      end
-
-      def clear_thinking
-        return unless @thinking_ts
-
-        @slack_bot.send(:slack_api, "chat.delete",
-          channel: @channel_id,
-          ts: @thinking_ts
-        )
-        @thinking_ts = nil
-      rescue => e
-        RailsConsoleAi.logger.error("Slack clear thinking failed: #{e.message}")
-        @thinking_ts = nil
       end
 
       def strip_ansi(text)
