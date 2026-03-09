@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.0]
+
+- Change module name from `RailsConsoleAI` to `RailsConsoleAi`
+
 ## [0.13.0]
 
 - Rename gem from `console_agent` to `rails_console_ai`
