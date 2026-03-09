@@ -1,0 +1,57 @@
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+  <h2 style="font-size: 20px;">Sessions</h2>
+  <span class="text-muted" style="font-size: 14px;"><%= @total %> total</span>
+</div>
+
+<% if @sessions.empty? %>
+  <div class="meta-card">
+    <p class="text-muted">No sessions recorded yet.</p>
+  </div>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>User</th>
+        <th>Name</th>
+        <th style="max-width: 400px;">Query</th>
+        <th>Mode</th>
+        <th>Tokens</th>
+        <th>Cost</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @sessions.each do |session| %>
+        <tr>
+          <td class="mono"><%= session.created_at.strftime('%Y-%m-%d %H:%M') %></td>
+          <td><%= session.user_name %></td>
+          <td><%= session.name.present? ? session.name : '-' %></td>
+          <td class="query-cell"><a href="<%= rails_console_ai.session_path(session) %>" title="<%= h session.query.truncate(200) %>"><%= truncate(session.query.gsub(/\s+/, ' ').strip, length: 80) %></a></td>
+          <td><span class="badge badge-<%= session.mode %>"><%= session.mode %></span></td>
+          <td class="mono"><%= session.input_tokens + session.output_tokens %></td>
+          <td class="mono"><%= format_cost(session) %></td>
+          <td class="mono"><%= session.duration_ms ? "#{session.duration_ms}ms" : '-' %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <% if @total_pages > 1 %>
+    <div class="pagination">
+      <% if @page > 1 %>
+        <a href="<%= rails_console_ai.sessions_path(page: @page - 1) %>">&larr; Newer</a>
+      <% else %>
+        <span class="disabled">&larr; Newer</span>
+      <% end %>
+
+      <span class="page-info">Page <%= @page %> of <%= @total_pages %></span>
+
+      <% if @page < @total_pages %>
+        <a href="<%= rails_console_ai.sessions_path(page: @page + 1) %>">Older &rarr;</a>
+      <% else %>
+        <span class="disabled">Older &rarr;</span>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>

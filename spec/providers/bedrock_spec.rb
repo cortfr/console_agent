@@ -1,6 +1,6 @@
 require 'spec_helper'
-require 'console_agent/providers/base'
-require 'console_agent/providers/bedrock'
+require 'rails_console_ai/providers/base'
+require 'rails_console_ai/providers/bedrock'
 
 # Stub the AWS SDK module structure for tests
 module Aws
@@ -15,9 +15,9 @@ module Aws
   end
 end
 
-RSpec.describe ConsoleAgent::Providers::Bedrock do
+RSpec.describe RailsConsoleAI::Providers::Bedrock do
   let(:config) do
-    ConsoleAgent::Configuration.new.tap do |c|
+    RailsConsoleAI::Configuration.new.tap do |c|
       c.provider = :bedrock
       c.model = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
       c.max_tokens = 1024
@@ -75,7 +75,7 @@ RSpec.describe ConsoleAgent::Providers::Bedrock do
         .and_raise(Aws::BedrockRuntime::Errors::ServiceError.new('Access denied'))
 
       expect { provider.chat(messages) }.to raise_error(
-        ConsoleAgent::Providers::ProviderError, /AWS Bedrock error.*Access denied/
+        RailsConsoleAI::Providers::ProviderError, /AWS Bedrock error.*Access denied/
       )
     end
   end
@@ -118,7 +118,7 @@ RSpec.describe ConsoleAgent::Providers::Bedrock do
 
   describe '#format_assistant_message' do
     it 'builds a Bedrock-format assistant message with tool calls' do
-      result = ConsoleAgent::Providers::ChatResult.new(
+      result = RailsConsoleAI::Providers::ChatResult.new(
         text: 'Checking...',
         tool_calls: [{ id: 'tool_1', name: 'list_tables', arguments: {} }]
       )

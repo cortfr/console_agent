@@ -1,10 +1,10 @@
 require 'webmock/rspec'
-require 'console_agent'
+require 'rails_console_ai'
 
 WebMock.disable_net_connect!
 
 RSpec.configure do |config|
   config.before(:each) do
-    ConsoleAgent.reset_configuration!
+    RailsConsoleAI.reset_configuration!
   end
 end

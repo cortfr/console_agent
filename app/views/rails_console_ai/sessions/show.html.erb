@@ -1,0 +1,66 @@
+<a href="<%= rails_console_ai.sessions_path %>" class="back-link">&larr; Back to sessions</a>
+
+<div class="meta-card">
+  <div class="meta-grid">
+    <div class="meta-item" style="grid-column: 1 / -1;">
+      <label>Query</label>
+      <% if @session.query.length > 300 %>
+        <div class="query-preview">
+          <span><%= truncate(@session.query, length: 300) %></span>
+          <details style="margin-top: 4px;">
+            <summary style="cursor: pointer; font-size: 12px; color: #4a6fa5;">Show full query</summary>
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 13px; margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 4px; max-height: 400px; overflow-y: auto;"><%= @session.query %></pre>
+          </details>
+        </div>
+      <% else %>
+        <span><%= @session.query %></span>
+      <% end %>
+    </div>
+    <% if @session.name.present? %>
+      <div class="meta-item">
+        <label>Name</label>
+        <span><%= @session.name %></span>
+      </div>
+    <% end %>
+    <div class="meta-item">
+      <label>Mode</label>
+      <span class="badge badge-<%= @session.mode %>"><%= @session.mode %></span>
+    </div>
+    <div class="meta-item">
+      <label>User</label>
+      <span><%= @session.user_name || '-' %></span>
+    </div>
+    <div class="meta-item">
+      <label>Provider / Model</label>
+      <span><%= @session.provider %> / <%= @session.model %></span>
+    </div>
+    <div class="meta-item">
+      <label>Tokens (in / out)</label>
+      <span class="mono"><%= @session.input_tokens %> / <%= @session.output_tokens %></span>
+    </div>
+    <div class="meta-item">
+      <label>Est. Cost</label>
+      <span class="mono"><%= format_cost(@session) %></span>
+    </div>
+    <div class="meta-item">
+      <label>Duration</label>
+      <span class="mono"><%= @session.duration_ms ? "#{@session.duration_ms}ms" : '-' %></span>
+    </div>
+    <div class="meta-item">
+      <label>Time</label>
+      <span><%= @session.created_at.strftime('%Y-%m-%d %H:%M:%S') %></span>
+    </div>
+  </div>
+</div>
+
+<h3 style="font-size: 16px; margin-bottom: 12px;">Console Output</h3>
+
+<% if @session.console_output.present? %>
+  <div class="terminal">
+    <pre><%= ansi_to_html(@session.console_output) %></pre>
+  </div>
+<% else %>
+  <div class="meta-card">
+    <p class="text-muted">No console output recorded for this session.</p>
+  </div>
+<% end %>

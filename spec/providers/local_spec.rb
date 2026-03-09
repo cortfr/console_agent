@@ -1,11 +1,11 @@
 require 'spec_helper'
-require 'console_agent/providers/base'
-require 'console_agent/providers/openai'
-require 'console_agent/providers/local'
+require 'rails_console_ai/providers/base'
+require 'rails_console_ai/providers/openai'
+require 'rails_console_ai/providers/local'
 
-RSpec.describe ConsoleAgent::Providers::Local do
+RSpec.describe RailsConsoleAI::Providers::Local do
   let(:config) do
-    ConsoleAgent::Configuration.new.tap do |c|
+    RailsConsoleAI::Configuration.new.tap do |c|
       c.provider = :local
       c.local_url = 'http://localhost:11434'
       c.local_model = 'qwen2.5:7b'
@@ -18,7 +18,7 @@ RSpec.describe ConsoleAgent::Providers::Local do
   subject(:provider) { described_class.new(config) }
 
   it 'inherits from OpenAI' do
-    expect(described_class).to be < ConsoleAgent::Providers::OpenAI
+    expect(described_class).to be < RailsConsoleAI::Providers::OpenAI
   end
 
   describe '#chat' do
@@ -214,7 +214,7 @@ RSpec.describe ConsoleAgent::Providers::Local do
 
   describe '#format_assistant_message' do
     it 'delegates to OpenAI implementation' do
-      result = ConsoleAgent::Providers::ChatResult.new(
+      result = RailsConsoleAI::Providers::ChatResult.new(
         text: 'Checking...',
         tool_calls: [{ id: 'call_1', name: 'list_tables', arguments: {} }]
       )

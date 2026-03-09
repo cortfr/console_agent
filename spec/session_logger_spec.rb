@@ -1,14 +1,14 @@
 require 'spec_helper'
 require 'json'
-require 'console_agent/session_logger'
+require 'rails_console_ai/session_logger'
 
-RSpec.describe ConsoleAgent::SessionLogger do
+RSpec.describe RailsConsoleAI::SessionLogger do
   let(:mock_connection) { double('connection') }
   let(:mock_session) { double('SessionClass') }
 
   before do
-    stub_const('ConsoleAgent::Session', mock_session)
-    allow(mock_connection).to receive(:table_exists?).with('console_agent_sessions').and_return(true)
+    stub_const('RailsConsoleAI::Session', mock_session)
+    allow(mock_connection).to receive(:table_exists?).with('rails_console_ai_sessions').and_return(true)
     allow(mock_session).to receive(:connection).and_return(mock_connection)
     allow(mock_session).to receive(:create!)
 
@@ -52,7 +52,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
     end
 
     it 'returns nil when session_logging is disabled' do
-      ConsoleAgent.configure { |c| c.session_logging = false }
+      RailsConsoleAI.configure { |c| c.session_logging = false }
 
       described_class.log(attrs)
       expect(mock_session).not_to have_received(:create!)
@@ -60,7 +60,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
 
     it 'returns nil when table does not exist' do
       described_class.instance_variable_set(:@table_exists, nil)
-      allow(mock_connection).to receive(:table_exists?).with('console_agent_sessions').and_return(false)
+      allow(mock_connection).to receive(:table_exists?).with('rails_console_ai_sessions').and_return(false)
 
       result = described_class.log(attrs)
       expect(result).to be_nil
@@ -70,7 +70,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
     it 'rescues errors and logs a warning' do
       allow(mock_session).to receive(:create!).and_raise(StandardError, 'db error')
       logger = double('Logger')
-      allow(ConsoleAgent).to receive(:logger).and_return(logger)
+      allow(RailsConsoleAI).to receive(:logger).and_return(logger)
       allow(logger).to receive(:warn)
 
       expect(described_class.log(attrs)).to be_nil
@@ -99,7 +99,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
     end
 
     it 'includes provider and model from configuration' do
-      ConsoleAgent.configure do |c|
+      RailsConsoleAI.configure do |c|
         c.provider = :openai
         c.model = 'gpt-4'
       end
@@ -179,7 +179,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
     end
 
     it 'does nothing when session_logging is disabled' do
-      ConsoleAgent.configure { |c| c.session_logging = false }
+      RailsConsoleAI.configure { |c| c.session_logging = false }
       described_class.update(42, input_tokens: 100)
       expect(mock_session).not_to have_received(:where)
     end
@@ -195,7 +195,7 @@ RSpec.describe ConsoleAgent::SessionLogger do
     it 'rescues errors and logs a warning' do
       allow(mock_session).to receive(:where).and_raise(StandardError, 'db error')
       logger = double('Logger')
-      allow(ConsoleAgent).to receive(:logger).and_return(logger)
+      allow(RailsConsoleAI).to receive(:logger).and_return(logger)
       allow(logger).to receive(:warn)
 
       expect(described_class.update(42, input_tokens: 100)).to be_nil

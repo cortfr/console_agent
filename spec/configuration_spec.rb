@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-RSpec.describe ConsoleAgent::Configuration do
+RSpec.describe RailsConsoleAI::Configuration do
   subject(:config) { described_class.new }
 
   describe 'defaults' do
@@ -31,7 +31,7 @@ RSpec.describe ConsoleAgent::Configuration do
 
   describe 'PROVIDERS' do
     it 'includes :local' do
-      expect(ConsoleAgent::Configuration::PROVIDERS).to include(:local)
+      expect(RailsConsoleAI::Configuration::PROVIDERS).to include(:local)
     end
   end
 
@@ -94,7 +94,7 @@ RSpec.describe ConsoleAgent::Configuration do
 
   describe '#safety_guards' do
     it 'returns a SafetyGuards instance' do
-      expect(config.safety_guards).to be_a(ConsoleAgent::SafetyGuards)
+      expect(config.safety_guards).to be_a(RailsConsoleAI::SafetyGuards)
     end
 
     it 'returns the same instance on repeated calls' do
@@ -127,7 +127,7 @@ RSpec.describe ConsoleAgent::Configuration do
 
     it 'raises for unknown built-in guards' do
       expect { config.use_builtin_safety_guard(:unknown) }
-        .to raise_error(ConsoleAgent::ConfigurationError, /Unknown built-in/)
+        .to raise_error(RailsConsoleAI::ConfigurationError, /Unknown built-in/)
     end
 
     it 'registers allowlist entries with allow: option' do
@@ -147,14 +147,14 @@ RSpec.describe ConsoleAgent::Configuration do
     it 'raises for unknown provider' do
       config.provider = :unknown
       expect { config.validate! }.to raise_error(
-        ConsoleAgent::ConfigurationError, /Unknown provider/
+        RailsConsoleAI::ConfigurationError, /Unknown provider/
       )
     end
 
     it 'raises when no API key is available' do
       allow(ENV).to receive(:[]).and_return(nil)
       expect { config.validate! }.to raise_error(
-        ConsoleAgent::ConfigurationError, /No API key/
+        RailsConsoleAI::ConfigurationError, /No API key/
       )
     end
 
@@ -172,7 +172,7 @@ RSpec.describe ConsoleAgent::Configuration do
       config.provider = :local
       config.local_url = ''
       expect { config.validate! }.to raise_error(
-        ConsoleAgent::ConfigurationError, /local_url/
+        RailsConsoleAI::ConfigurationError, /local_url/
       )
     end
   end

@@ -1,10 +1,10 @@
 require 'spec_helper'
-require 'console_agent/providers/base'
-require 'console_agent/providers/openai'
+require 'rails_console_ai/providers/base'
+require 'rails_console_ai/providers/openai'
 
-RSpec.describe ConsoleAgent::Providers::OpenAI do
+RSpec.describe RailsConsoleAI::Providers::OpenAI do
   let(:config) do
-    ConsoleAgent::Configuration.new.tap do |c|
+    RailsConsoleAI::Configuration.new.tap do |c|
       c.provider = :openai
       c.api_key = 'test-openai-key'
       c.model = 'gpt-test'
@@ -51,7 +51,7 @@ RSpec.describe ConsoleAgent::Providers::OpenAI do
         )
 
       expect { provider.chat(messages) }.to raise_error(
-        ConsoleAgent::Providers::ProviderError, /Rate limit exceeded/
+        RailsConsoleAI::Providers::ProviderError, /Rate limit exceeded/
       )
     end
   end
@@ -118,7 +118,7 @@ RSpec.describe ConsoleAgent::Providers::OpenAI do
 
   describe '#format_assistant_message' do
     it 'builds an assistant message with tool_calls' do
-      result = ConsoleAgent::Providers::ChatResult.new(
+      result = RailsConsoleAI::Providers::ChatResult.new(
         text: 'Checking...',
         tool_calls: [{ id: 'call_1', name: 'list_tables', arguments: {} }]
       )

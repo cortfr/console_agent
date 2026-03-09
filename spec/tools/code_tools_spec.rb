@@ -1,9 +1,9 @@
 require 'spec_helper'
 require 'fileutils'
 require 'tmpdir'
-require 'console_agent/tools/code_tools'
+require 'rails_console_ai/tools/code_tools'
 
-RSpec.describe ConsoleAgent::Tools::CodeTools do
+RSpec.describe RailsConsoleAI::Tools::CodeTools do
   subject(:tools) { described_class.new }
 
   describe '#read_file' do

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-VERSION_FILE="lib/console_agent/version.rb"
-GEMSPEC="console_agent.gemspec"
+VERSION_FILE="lib/rails_console_ai/version.rb"
+GEMSPEC="rails_console_ai.gemspec"
 
 current_version=$(sed -n "s/.*VERSION = '\([0-9]*\.[0-9]*\.[0-9]*\)'.*/\1/p" "$VERSION_FILE")
 IFS='.' read -r major minor patch <<< "$current_version"
@@ -72,7 +72,7 @@ echo "Tests passed."
 
 # Build gem
 echo ""
-gem_file="console_agent-${new_version}.gem"
+gem_file="rails_console_ai-${new_version}.gem"
 gem build "$GEMSPEC"
 echo "Built $gem_file"
 

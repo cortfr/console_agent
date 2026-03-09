@@ -1,11 +1,11 @@
 require 'spec_helper'
-require 'console_agent/storage/file_storage'
-require 'console_agent/tools/memory_tools'
+require 'rails_console_ai/storage/file_storage'
+require 'rails_console_ai/tools/memory_tools'
 require 'tmpdir'
 
-RSpec.describe ConsoleAgent::Tools::MemoryTools do
-  let(:tmpdir) { Dir.mktmpdir('console_agent_test') }
-  let(:storage) { ConsoleAgent::Storage::FileStorage.new(tmpdir) }
+RSpec.describe RailsConsoleAI::Tools::MemoryTools do
+  let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
+  let(:storage) { RailsConsoleAI::Storage::FileStorage.new(tmpdir) }
   subject(:tools) { described_class.new(storage) }
 
   after { FileUtils.rm_rf(tmpdir) }
@@ -64,12 +64,12 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
     end
 
     it 'returns fallback text on storage error' do
-      failing_storage = instance_double(ConsoleAgent::Storage::FileStorage)
+      failing_storage = instance_double(RailsConsoleAI::Storage::FileStorage)
       allow(failing_storage).to receive(:read).and_return(nil)
       allow(failing_storage).to receive(:exists?).and_return(false)
       allow(failing_storage).to receive(:list).and_return([])
       allow(failing_storage).to receive(:write).and_raise(
-        ConsoleAgent::Storage::StorageError, 'Read-only filesystem'
+        RailsConsoleAI::Storage::StorageError, 'Read-only filesystem'
       )
 
       tools_with_bad_storage = described_class.new(failing_storage)
@@ -124,7 +124,7 @@ RSpec.describe ConsoleAgent::Tools::MemoryTools do
     end
 
     it 'returns message when no memories exist' do
-      empty_tools = described_class.new(ConsoleAgent::Storage::FileStorage.new(Dir.mktmpdir))
+      empty_tools = described_class.new(RailsConsoleAI::Storage::FileStorage.new(Dir.mktmpdir))
       expect(empty_tools.recall_memories).to eq('No memories stored yet.')
     end
 

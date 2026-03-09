@@ -1,10 +1,10 @@
 require 'spec_helper'
-require 'console_agent/providers/base'
-require 'console_agent/providers/anthropic'
+require 'rails_console_ai/providers/base'
+require 'rails_console_ai/providers/anthropic'
 
-RSpec.describe ConsoleAgent::Providers::Anthropic do
+RSpec.describe RailsConsoleAI::Providers::Anthropic do
   let(:config) do
-    ConsoleAgent::Configuration.new.tap do |c|
+    RailsConsoleAI::Configuration.new.tap do |c|
       c.provider = :anthropic
       c.api_key = 'test-anthropic-key'
       c.model = 'claude-test'
@@ -53,7 +53,7 @@ RSpec.describe ConsoleAgent::Providers::Anthropic do
         )
 
       expect { provider.chat(messages) }.to raise_error(
-        ConsoleAgent::Providers::ProviderError, /Invalid API key/
+        RailsConsoleAI::Providers::ProviderError, /Invalid API key/
       )
     end
   end
@@ -117,7 +117,7 @@ RSpec.describe ConsoleAgent::Providers::Anthropic do
 
   describe '#format_assistant_message' do
     it 'builds an assistant message with tool calls' do
-      result = ConsoleAgent::Providers::ChatResult.new(
+      result = RailsConsoleAI::Providers::ChatResult.new(
         text: 'Checking...',
         tool_calls: [{ id: 'tool_1', name: 'list_tables', arguments: {} }]
       )

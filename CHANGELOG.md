@@ -47,7 +47,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.6.0]
 
-- Add core memory (`console_agent.md`) that persists across sessions in the system prompt
+- Add core memory (`rails_console_ai.md`) that persists across sessions in the system prompt
 - Add `ai_init` command to seed core memory
 - Allow reading partial files
 - Fix rspec hanging issues
@@ -67,7 +67,7 @@ All notable changes to this project will be documented in this file.
 ## [0.3.0]
 
 - Add plan mechanism with "auto" execution mode
-- Add session logging to DB with `/console_agent` admin UI
+- Add session logging to DB with `/rails_console_ai` admin UI
 - List and resume past sessions with pagination
 - Add shift-tab for auto-execute mode
 - Add usage display and debug toggle
