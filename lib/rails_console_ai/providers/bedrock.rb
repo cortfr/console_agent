@@ -115,7 +115,7 @@ module RailsConsoleAi
       end
 
       def format_messages(messages)
-        messages.map do |msg|
+        formatted = messages.map do |msg|
           content = if msg[:content].is_a?(Array)
                       msg[:content]
                     else
@@ -123,6 +123,18 @@ module RailsConsoleAi
                     end
           { role: msg[:role].to_s, content: content }
         end
+
+        # Bedrock requires all tool_result blocks for a single assistant turn
+        # to be in one user message. Merge consecutive same-role messages.
+        merged = []
+        formatted.each do |msg|
+          if merged.last && merged.last[:role] == msg[:role]
+            merged.last[:content].concat(msg[:content])
+          else
+            merged << msg
+          end
+        end
+        merged
       end
 
       def extract_text(response)

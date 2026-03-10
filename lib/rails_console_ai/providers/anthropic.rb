@@ -87,13 +87,28 @@ module RailsConsoleAi
       end
 
       def format_messages(messages)
-        messages.map do |msg|
+        formatted = messages.map do |msg|
           if msg[:content].is_a?(Array)
             { role: msg[:role].to_s, content: msg[:content] }
           else
             { role: msg[:role].to_s, content: msg[:content].to_s }
           end
         end
+
+        # Anthropic API requires all tool_result blocks for a single assistant
+        # turn to be in one user message. Merge consecutive same-role messages.
+        merged = []
+        formatted.each do |msg|
+          if merged.last && merged.last[:role] == msg[:role]
+            prev = merged.last[:content]
+            curr = msg[:content]
+            # Ensure both are arrays before merging
+            merged.last[:content] = Array(prev).concat(Array(curr))
+          else
+            merged << msg
+          end
+        end
+        merged
       end
 
       def extract_text(data)
