@@ -126,6 +126,16 @@ module RailsConsoleAi
         super
       end
 
+      def exec_query(sql, *args, **kwargs)
+        rails_console_ai_check_write!(sql)
+        super
+      end
+
+      def exec_insert(sql, *args, **kwargs)
+        rails_console_ai_check_write!(sql)
+        super
+      end
+
       def exec_delete(sql, *args, **kwargs)
         rails_console_ai_check_write!(sql)
         super

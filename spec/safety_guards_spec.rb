@@ -247,6 +247,14 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
           sql # base implementation just returns sql
         end
 
+        def exec_query(sql, *args, **kwargs)
+          sql
+        end
+
+        def exec_insert(sql, *args, **kwargs)
+          sql
+        end
+
         def exec_delete(sql, *args, **kwargs)
           sql
         end
@@ -300,6 +308,20 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
 
       it 'allows SHOW statements' do
         expect(adapter.execute("SHOW TABLES")).to eq("SHOW TABLES")
+      end
+
+      it 'blocks exec_query with INSERT' do
+        expect { adapter.exec_query("INSERT INTO users (name) VALUES ('test')") }
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
+      end
+
+      it 'allows exec_query with SELECT' do
+        expect(adapter.exec_query("SELECT * FROM users")).to eq("SELECT * FROM users")
+      end
+
+      it 'blocks exec_insert' do
+        expect { adapter.exec_insert("INSERT INTO users (name) VALUES ('test')") }
+          .to raise_error(RailsConsoleAi::SafetyError, /Database write blocked/)
       end
 
       it 'blocks exec_delete' do
