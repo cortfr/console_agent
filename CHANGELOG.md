@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0]
+
+- Fix duplicate tool result IDs in AWS Bedrock provider
+
 ## [0.18.0]
 
 - Handle "smart" quotes coming from Slack
