@@ -272,7 +272,7 @@ module RailsConsoleAi
       return if event[:user] == @bot_user_id
       return if event[:subtype]
 
-      text = event[:text]
+      text = unescape_slack(event[:text])
       return unless text && !text.strip.empty?
 
       channel_id = event[:channel]
@@ -314,6 +314,15 @@ module RailsConsoleAi
         cancel_session(session, channel_id, thread_ts) if session
         clear_bot_messages(channel_id, thread_ts)
         return
+      end
+
+      # Direct code execution: "> User.count" runs code without LLM
+      if text.strip.start_with?('>')
+        raw_code = text.strip.sub(/\A>\s*/, '')
+        unless raw_code.empty?
+          handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
+          return
+        end
       end
 
       if session
@@ -404,6 +413,60 @@ module RailsConsoleAi
       end
     end
 
+    def handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
+      # Ensure a session exists for this thread
+      unless session
+        start_direct_session(channel_id, thread_ts, user_name)
+        session = @mutex.synchronize { @sessions[thread_ts] }
+      end
+
+      channel = session[:channel]
+      engine = session[:engine]
+
+      session[:thread] = Thread.new do
+        Thread.current.report_on_exception = false
+        Thread.current[:log_prefix] = channel.instance_variable_get(:@log_prefix)
+        begin
+          engine.execute_direct(raw_code)
+          # Post return value to Slack (execute_direct suppresses it via display_result no-op)
+          result_value = engine.instance_variable_get(:@last_interactive_result)
+          unless result_value.nil?
+            display_text = "=> #{result_value}"
+            display_text = display_text[0, 3000] + "\n... (truncated)" if display_text.length > 3000
+            post_message(channel: channel_id, thread_ts: thread_ts, text: "```#{display_text}```")
+          end
+          engine.send(:log_interactive_turn)
+        rescue => e
+          channel.display_error("Error: #{e.class}: #{e.message}")
+          RailsConsoleAi.logger.error("SlackBot direct code error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+        ensure
+          ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
+        end
+      end
+    end
+
+    def start_direct_session(channel_id, thread_ts, user_name)
+      channel = Channel::Slack.new(
+        slack_bot: self,
+        channel_id: channel_id,
+        thread_ts: thread_ts,
+        user_name: user_name
+      )
+
+      sandbox_binding = Object.new.instance_eval { binding }
+      engine = ConversationEngine.new(
+        binding_context: sandbox_binding,
+        channel: channel,
+        slack_thread_ts: thread_ts
+      )
+
+      restore_from_db(engine, thread_ts)
+      engine.init_interactive unless engine.instance_variable_get(:@interactive_start)
+
+      session = { channel: channel, engine: engine, thread: nil }
+      @mutex.synchronize { @sessions[thread_ts] = session }
+    end
+
     def cancel_session(session, channel_id, thread_ts)
       if session
         session[:channel].cancel!
@@ -463,6 +526,11 @@ module RailsConsoleAi
       JSON.parse(resp.body)
     rescue => e
       { "ok" => false, "error" => e.message }
+    end
+
+    def unescape_slack(text)
+      return text unless text
+      text.gsub("&amp;", "&").gsub("&lt;", "<").gsub("&gt;", ">")
     end
 
     def waiting_for_reply?(channel)
