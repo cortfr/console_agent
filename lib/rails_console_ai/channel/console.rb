@@ -158,6 +158,8 @@ module RailsConsoleAi
         guards = RailsConsoleAi.configuration.safety_guards
         name_display = @engine.session_name ? " (#{@engine.session_name})" : ""
         @real_stdout.puts "\e[36mRailsConsoleAi interactive mode#{name_display}. Type 'exit' or 'quit' to leave.\e[0m"
+        config = RailsConsoleAi.configuration
+        @real_stdout.puts "\e[2m  Provider: #{config.provider} | Model: #{config.resolved_model}\e[0m"
         safe_info = guards.empty? ? '' : " | Safe mode: #{guards.enabled? ? 'ON' : 'OFF'} (/danger to toggle)"
         @real_stdout.puts "\e[2m  Auto-execute: #{auto ? 'ON' : 'OFF'} (Shift-Tab or /auto to toggle)#{safe_info} | > code | /usage | /cost | /compact | /think | /name <label>\e[0m"
 
