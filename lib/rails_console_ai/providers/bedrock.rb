@@ -117,7 +117,7 @@ module RailsConsoleAi
       def format_messages(messages)
         formatted = messages.map do |msg|
           content = if msg[:content].is_a?(Array)
-                      msg[:content]
+                      msg[:content].dup
                     else
                       [{ text: msg[:content].to_s }]
                     end

@@ -139,4 +139,28 @@ RSpec.describe RailsConsoleAi::Providers::Bedrock do
       expect(msg[:content][0][:tool_result][:content]).to eq([{ text: 'users, posts' }])
     end
   end
+
+  describe '#format_messages (via #chat)' do
+    it 'does not mutate the original message content arrays when merging consecutive same-role messages' do
+      tool_result_1 = { role: :user, content: [{ tool_result: { tool_use_id: 'tool_1', content: [{ text: 'result1' }] } }] }
+      tool_result_2 = { role: :user, content: [{ tool_result: { tool_use_id: 'tool_2', content: [{ text: 'result2' }] } }] }
+      messages = [
+        { role: :user, content: 'Hello' },
+        { role: :assistant, content: 'I will use two tools.' },
+        tool_result_1,
+        tool_result_2
+      ]
+
+      response = build_response([text_block('Done.')])
+      allow(mock_client).to receive(:converse).and_return(response)
+
+      # Call chat twice with the same messages array
+      provider.chat(messages, system_prompt: 'Be helpful')
+      provider.chat(messages, system_prompt: 'Be helpful')
+
+      # Original content arrays should not have been mutated
+      expect(tool_result_1[:content].length).to eq(1)
+      expect(tool_result_2[:content].length).to eq(1)
+    end
+  end
 end
