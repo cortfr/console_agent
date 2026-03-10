@@ -1,4 +1,5 @@
 require 'stringio'
+require_relative 'safety_guards'
 
 module RailsConsoleAi
   # Writes to two IO streams simultaneously
@@ -97,11 +98,24 @@ module RailsConsoleAi
       # Tee output: capture it and also print to the real stdout
       $stdout = TeeIO.new(old_stdout, captured_output)
 
+      RailsConsoleAi::SafetyError.clear!
+
       result = with_safety_guards do
         binding_context.eval(code, "(rails_console_ai)", 1)
       end
 
       $stdout = old_stdout
+
+      # Check if a SafetyError was raised but swallowed by a rescue inside the eval'd code
+      if (swallowed = RailsConsoleAi::SafetyError.last_raised)
+        RailsConsoleAi::SafetyError.clear!
+        @last_error = "SafetyError: #{swallowed.message}"
+        @last_safety_error = true
+        @last_safety_exception = swallowed
+        display_error("Blocked: #{swallowed.message}")
+        @last_output = captured_output&.string
+        return nil
+      end
 
       # Send captured puts output through channel before the return value
       if @channel && !captured_output.string.empty?
@@ -114,6 +128,7 @@ module RailsConsoleAi
       result
     rescue RailsConsoleAi::SafetyError => e
       $stdout = old_stdout if old_stdout
+      RailsConsoleAi::SafetyError.clear!
       @last_error = "SafetyError: #{e.message}"
       @last_safety_error = true
       @last_safety_exception = e

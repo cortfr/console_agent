@@ -161,6 +161,25 @@ RSpec.describe RailsConsoleAi::Executor do
       expect(executor.last_safety_exception.blocked_key).to eq("users")
     end
 
+    it 'detects SafetyError swallowed by rescue inside eval code' do
+      # Simulate LLM-generated code that wraps a call in begin/rescue => e,
+      # which catches the SafetyError before the executor can see it.
+      code = <<~RUBY
+        begin
+          raise RailsConsoleAi::SafetyError.new("HTTP POST blocked (example.com)", guard: :http_mutations, blocked_key: "example.com")
+        rescue => e
+          { result: 'error', error: e.class.to_s, message: e.message }
+        end
+      RUBY
+
+      result = executor.execute(code)
+      expect(result).to be_nil
+      expect(executor.last_safety_error).to eq(true)
+      expect(executor.last_safety_exception).to be_a(RailsConsoleAi::SafetyError)
+      expect(executor.last_safety_exception.guard).to eq(:http_mutations)
+      expect(executor.last_safety_exception.blocked_key).to eq("example.com")
+    end
+
     it 'clears last_safety_exception on successful execution' do
       RailsConsoleAi.configuration.safety_guard(:blocker) do |&block|
         raise RailsConsoleAi::SafetyError.new("blocked", guard: :test, blocked_key: "x")

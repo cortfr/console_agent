@@ -221,6 +221,16 @@ module RailsConsoleAi
       end
     end
 
+    def retry_last_code
+      code = @last_interactive_code
+      unless code
+        @channel.display_warning("No code to retry.")
+        return
+      end
+      @channel.display_dim("  Retrying last code...")
+      execute_direct(code)
+    end
+
     def execute_direct(raw_code)
       exec_result = @executor.execute(raw_code)
 

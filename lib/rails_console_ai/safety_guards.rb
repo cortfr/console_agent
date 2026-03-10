@@ -5,10 +5,21 @@ module RailsConsoleAi
   class SafetyError < StandardError
     attr_reader :guard, :blocked_key
 
+    # Thread-local tracking so the executor can detect safety errors
+    # even when swallowed by a rescue inside eval'd code.
+    def self.last_raised
+      Thread.current[:rails_console_ai_last_safety_error]
+    end
+
+    def self.clear!
+      Thread.current[:rails_console_ai_last_safety_error] = nil
+    end
+
     def initialize(message, guard: nil, blocked_key: nil)
       super(message)
       @guard = guard
       @blocked_key = blocked_key
+      Thread.current[:rails_console_ai_last_safety_error] = self
     end
   end
 
