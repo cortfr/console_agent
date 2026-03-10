@@ -35,6 +35,13 @@ module RailsConsoleAi
       $stdout = RailsConsoleAi::PrefixedIO.new($stdout) unless $stdout.is_a?(RailsConsoleAi::PrefixedIO)
       $stderr = RailsConsoleAi::PrefixedIO.new($stderr) unless $stderr.is_a?(RailsConsoleAi::PrefixedIO)
 
+      # Eager load the Rails app so class-level initializers (e.g. Secret.get)
+      # run before safety guards are active during user code execution.
+      if defined?(Rails) && Rails.application.respond_to?(:eager_load!)
+        puts "Eager loading application..."
+        Rails.application.eager_load!
+      end
+
       @bot_user_id = slack_api("auth.test", token: @bot_token).dig("user_id")
       log_startup
 
