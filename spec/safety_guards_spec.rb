@@ -321,6 +321,77 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       end
     end
 
+    context 'additional_bypass_methods' do
+      let(:target_class) do
+        klass = Class.new do
+          def skill_method
+            :original
+          end
+        end
+        stub_const('FakeSkillClass', klass)
+        klass
+      end
+
+      before do
+        target_class
+        RailsConsoleAi.configuration.bypass_guards_for_methods = []
+        guards.add(:test) { |&b| b.call }
+      end
+
+      after do
+        Thread.current[:rails_console_ai_bypass_methods] = nil
+      end
+
+      it 'merges additional bypass methods into the bypass set' do
+        bypass_set = nil
+        guards.wrap(additional_bypass_methods: Set.new(['FakeSkillClass#skill_method'])) do
+          bypass_set = Thread.current[:rails_console_ai_bypass_methods]
+        end
+        expect(bypass_set).to include('FakeSkillClass#skill_method')
+      end
+
+      it 'works with nil additional_bypass_methods' do
+        result = guards.wrap(additional_bypass_methods: nil) { 42 }
+        expect(result).to eq(42)
+      end
+
+      it 'activates bypass for skill methods when in the additional set' do
+        guards.install_bypass_method!('FakeSkillClass#skill_method')
+        instance = target_class.new
+        result = nil
+        guards.wrap(additional_bypass_methods: Set.new(['FakeSkillClass#skill_method'])) do
+          result = instance.skill_method
+        end
+        expect(result).to eq(:original)
+      end
+    end
+
+    context 'install_bypass_method!' do
+      let(:target_class) do
+        klass = Class.new do
+          def public_method
+            :original
+          end
+        end
+        stub_const('FakePublicClass', klass)
+        klass
+      end
+
+      before { target_class }
+
+      it 'is idempotent — does not prepend twice' do
+        ancestor_count_before = target_class.ancestors.length
+        guards.install_bypass_method!('FakePublicClass#public_method')
+        guards.install_bypass_method!('FakePublicClass#public_method')
+        ancestor_count_after = target_class.ancestors.length
+        expect(ancestor_count_after - ancestor_count_before).to eq(1)
+      end
+
+      it 'gracefully handles unknown classes' do
+        expect { guards.install_bypass_method!('NonexistentClass#foo') }.not_to raise_error
+      end
+    end
+
     context 'channel-specific bypass methods' do
       let(:target_class) do
         klass = Class.new do

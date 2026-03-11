@@ -70,6 +70,74 @@ RSpec.describe RailsConsoleAi::ContextBuilder do
     end
   end
 
+  describe 'skills_context' do
+    it 'includes skills section when skill files exist' do
+      storage.write('skills/approve-changes.md', <<~MD)
+        ---
+        name: Approve Changes
+        description: Approve or reject change approval records
+        tags:
+          - admin
+        bypass_guards_for_methods:
+          - "ChangeApproval#approve_by!"
+        ---
+
+        ## Recipe
+        1. Find the record
+        2. Call approve_by!
+      MD
+
+      result = builder.build
+      expect(result).to include('## Skills')
+      expect(result).to include('Approve Changes')
+      expect(result).to include('activate_skill')
+    end
+
+    it 'omits skills section when no skill files exist' do
+      result = builder.build
+      expect(result).not_to include('## Skills')
+    end
+
+    it 'places skills between trusted methods and pinned memories' do
+      RailsConsoleAi.configure do |c|
+        c.bypass_guards_for_methods = ['SomeClass#method']
+        c.memories_enabled = true
+        c.channels = { 'slack' => { 'pinned_memory_tags' => ['sharding'] } }
+      end
+
+      storage.write('skills/test-skill.md', <<~MD)
+        ---
+        name: Test Skill
+        description: A test skill
+        ---
+
+        Body here.
+      MD
+
+      require 'rails_console_ai/tools/memory_tools'
+      RailsConsoleAi::Tools::MemoryTools.new(storage).save_memory(
+        name: 'Sharding', description: 'Info', tags: ['sharding']
+      )
+
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+
+      trusted_pos = result.index('## Trusted Methods')
+      skills_pos = result.index('## Skills')
+      pinned_pos = result.index('## Pinned Memories')
+      expect(trusted_pos).not_to be_nil
+      expect(skills_pos).not_to be_nil
+      expect(pinned_pos).not_to be_nil
+      expect(trusted_pos).to be < skills_pos
+      expect(skills_pos).to be < pinned_pos
+    end
+
+    it 'mentions skills in system instructions' do
+      result = builder.build
+      expect(result).to include('activate_skill')
+    end
+  end
+
   describe 'guide_context' do
     it 'includes guide content when file exists' do
       storage.write(RailsConsoleAi::GUIDE_KEY, "# My App\nThis is a Rails app.")

@@ -97,6 +97,7 @@ Say "think harder" in any query to auto-upgrade to the thinking model for that s
 - **Multi-step plans** — complex tasks are broken into steps, executed sequentially with `step1`/`step2` references
 - **Two-tier models** — defaults to Sonnet for speed/cost; `/think` upgrades to Opus when you need it
 - **Cost tracking** — `/cost` shows per-model token usage and estimated spend
+- **Skills** — predefined procedures with guard bypasses that the AI activates on demand
 - **Memories** — AI saves what it learns about your app across sessions
 - **App guide** — `ai_init` generates a guide injected into every system prompt
 - **Sessions** — name, list, and resume interactive conversations (`ai_setup` to enable)
@@ -164,6 +165,50 @@ end
 Global and channel-specific methods are merged for the active channel. These method shims are installed lazily on the first AI execution (not at boot) and are session-scoped — they only bypass guards inside `SafetyGuards#wrap`. Outside of an AI session (e.g. in normal web requests), the methods behave normally with zero overhead beyond a single thread-local read.
 
 The AI is told about these trusted methods in its system prompt and will use them directly without triggering safety errors.
+
+### Skills
+
+Skills bundle a step-by-step recipe with guard bypass declarations into a single file. Unlike `bypass_guards_for_methods` (which is always-on), skill bypasses are only active after the AI explicitly activates the skill.
+
+Create markdown files in `.rails_console_ai/skills/`:
+
+```markdown
+---
+name: Approve/Reject ChangeApprovals
+description: Approve or reject change approval records on behalf of an admin
+tags:
+  - change-approval
+  - admin
+bypass_guards_for_methods:
+  - "ChangeApproval#approve_by!"
+  - "ChangeApproval#reject_by!"
+---
+
+## When to use
+Use when the user asks to approve or reject a change approval.
+
+## Recipe
+1. Find the ChangeApproval by ID or search
+2. Confirm approve or reject
+3. Get optional review notes
+4. Determine which admin user is acting
+5. Call approve_by! or reject_by!
+
+## Code Examples
+
+    ca = ChangeApproval.find(id)
+    admin = User.find_by!(email: "admin@example.com")
+    ca.approve_by!(admin, "Approved per request")
+```
+
+**How it works:**
+
+1. Skill summaries (name + description) appear in the AI's system prompt
+2. When the user's request matches a skill, the AI calls `activate_skill` to load the full recipe
+3. The skill's `bypass_guards_for_methods` are added to the active bypass set
+4. The AI follows the recipe, executing code with the declared methods bypassing safety guards
+
+Skills and global `bypass_guards_for_methods` coexist — use config-level bypasses for simple trusted methods, and skills for operations that benefit from a documented procedure.
 
 ### Toggling Safe Mode
 

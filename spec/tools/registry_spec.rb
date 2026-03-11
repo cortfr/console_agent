@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'rails_console_ai/tools/registry'
+require 'rails_console_ai/executor'
 
 RSpec.describe RailsConsoleAi::Tools::Registry do
   subject(:registry) { described_class.new }
@@ -72,6 +73,53 @@ RSpec.describe RailsConsoleAi::Tools::Registry do
       reg = described_class.new(executor: executor)
       result = reg.execute('recall_output', { 'id' => 999 })
       expect(result).to include('No output found')
+    end
+  end
+
+  describe 'activate_skill tool' do
+    let(:tmpdir) { Dir.mktmpdir('rails_console_ai_test') }
+    let(:storage) { RailsConsoleAi::Storage::FileStorage.new(tmpdir) }
+    let(:executor) { RailsConsoleAi::Executor.new(binding) }
+
+    before do
+      RailsConsoleAi.configure { |c| c.storage_adapter = storage }
+      storage.write('skills/test-skill.md', <<~MD)
+        ---
+        name: Test Skill
+        description: A test skill
+        bypass_guards_for_methods:
+          - "SomeClass#some_method"
+        ---
+
+        ## Recipe
+        Do the thing.
+      MD
+    end
+
+    after { FileUtils.rm_rf(tmpdir) }
+
+    it 'is registered when executor is provided' do
+      reg = described_class.new(executor: executor)
+      names = reg.definitions.map { |d| d[:name] }
+      expect(names).to include('activate_skill')
+    end
+
+    it 'is not registered without an executor' do
+      names = registry.definitions.map { |d| d[:name] }
+      expect(names).not_to include('activate_skill')
+    end
+
+    it 'returns skill body on activation' do
+      reg = described_class.new(executor: executor)
+      result = reg.execute('activate_skill', { 'name' => 'Test Skill' })
+      expect(result).to include('## Recipe')
+      expect(result).to include('Do the thing.')
+    end
+
+    it 'returns error for unknown skill' do
+      reg = described_class.new(executor: executor)
+      result = reg.execute('activate_skill', { 'name' => 'Nonexistent' })
+      expect(result).to include('Skill not found')
     end
   end
 

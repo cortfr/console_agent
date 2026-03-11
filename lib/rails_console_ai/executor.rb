@@ -54,6 +54,7 @@ module RailsConsoleAi
       @omitted_counter = 0
       @output_store = {}
       @output_counter = 0
+      @active_skill_bypass_methods = Set.new
     end
 
     def extract_code(response)
@@ -321,6 +322,14 @@ module RailsConsoleAi
       nil
     end
 
+    def activate_skill_bypasses(methods)
+      guards = RailsConsoleAi.configuration.safety_guards
+      Array(methods).each do |spec|
+        @active_skill_bypass_methods << spec
+        guards.install_bypass_method!(spec)
+      end
+    end
+
     private
 
     def danger_allowed?
@@ -364,7 +373,11 @@ module RailsConsoleAi
     end
 
     def with_safety_guards(&block)
-      RailsConsoleAi.configuration.safety_guards.wrap(channel_mode: @channel&.mode, &block)
+      RailsConsoleAi.configuration.safety_guards.wrap(
+        channel_mode: @channel&.mode,
+        additional_bypass_methods: @active_skill_bypass_methods,
+        &block
+      )
     end
 
     # Check if an exception is or wraps a SafetyError (e.g. AR::StatementInvalid wrapping it)

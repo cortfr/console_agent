@@ -85,11 +85,12 @@ module RailsConsoleAi
     # Compose all guards around a block of code.
     # Each guard is an around-block: guard.call { inner }
     # Result: guard_1 { guard_2 { guard_3 { yield } } }
-    def wrap(channel_mode: nil, &block)
+    def wrap(channel_mode: nil, additional_bypass_methods: nil, &block)
       return yield unless @enabled && !@guards.empty?
 
       install_skills_once!
       bypass_set = resolve_bypass_methods(channel_mode)
+      Array(additional_bypass_methods).each { |m| bypass_set << m }
 
       prev_active = Thread.current[:rails_console_ai_session_active]
       prev_bypass = Thread.current[:rails_console_ai_bypass_methods]
@@ -103,6 +104,30 @@ module RailsConsoleAi
         Thread.current[:rails_console_ai_session_active] = prev_active
         Thread.current[:rails_console_ai_bypass_methods] = prev_bypass
       end
+    end
+
+    # Install a bypass shim for a single method spec (e.g. "ChangeApproval#approve_by!").
+    # Prepends a module that checks the thread-local bypass set at runtime.
+    # Idempotent: tracks which specs have been installed to avoid double-prepending.
+    def install_bypass_method!(spec)
+      @installed_bypass_specs ||= Set.new
+      return if @installed_bypass_specs.include?(spec)
+
+      class_name, method_name = spec.split('#')
+      klass = Object.const_get(class_name) rescue return
+      method_sym = method_name.to_sym
+
+      bypass_mod = Module.new do
+        define_method(method_sym) do |*args, &blk|
+          if Thread.current[:rails_console_ai_bypass_methods]&.include?(spec)
+            RailsConsoleAi.configuration.safety_guards.without_guards { super(*args, &blk) }
+          else
+            super(*args, &blk)
+          end
+        end
+      end
+      klass.prepend(bypass_mod)
+      @installed_bypass_specs << spec
     end
 
     private
@@ -125,26 +150,9 @@ module RailsConsoleAi
         RailsConsoleAi.configuration.channels.each_value do |cfg|
           (cfg['bypass_guards_for_methods'] || []).each { |m| all_methods << m }
         end
-        all_methods.each { |spec| install_skill!(spec) }
+        all_methods.each { |spec| install_bypass_method!(spec) }
         @skills_installed = true
       end
-    end
-
-    def install_skill!(spec)
-      class_name, method_name = spec.split('#')
-      klass = Object.const_get(class_name) rescue return
-      method_sym = method_name.to_sym
-
-      bypass_mod = Module.new do
-        define_method(method_sym) do |*args, &blk|
-          if Thread.current[:rails_console_ai_bypass_methods]&.include?(spec)
-            RailsConsoleAi.configuration.safety_guards.without_guards { super(*args, &blk) }
-          else
-            super(*args, &blk)
-          end
-        end
-      end
-      klass.prepend(bypass_mod)
     end
 
     public

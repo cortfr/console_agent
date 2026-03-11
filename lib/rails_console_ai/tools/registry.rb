@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan activate_skill].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil)
         @executor = executor
@@ -216,6 +216,7 @@ module RailsConsoleAi
           )
 
           register_memory_tools
+          register_skill_tools
           register_execute_plan
         end
       end
@@ -267,6 +268,36 @@ module RailsConsoleAi
             }
           },
           handler: ->(args) { memory.recall_memories(query: args['query'], tag: args['tag']) }
+        )
+      end
+
+      def register_skill_tools
+        return unless @executor
+
+        require 'rails_console_ai/skill_loader'
+        loader = RailsConsoleAi::SkillLoader.new
+
+        register(
+          name: 'activate_skill',
+          description: 'Activate a skill to load its recipe and enable its guard bypasses. Call this before following a skill\'s procedure.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The skill name to activate' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) {
+            skill = loader.find_skill(args['name'])
+            unless skill
+              return "Skill not found: \"#{args['name']}\". Use the skills listed in the system prompt."
+            end
+
+            bypass_methods = Array(skill['bypass_guards_for_methods'])
+            @executor.activate_skill_bypasses(bypass_methods) unless bypass_methods.empty?
+
+            skill['body']
+          }
         )
       end
 

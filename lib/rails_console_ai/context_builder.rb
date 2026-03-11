@@ -18,6 +18,7 @@ module RailsConsoleAi
       parts << environment_context
       parts << guide_context
       parts << trusted_methods_context
+      parts << skills_context
       parts << pinned_memory_context
       parts << memory_context
       parts.compact.join("\n\n")
@@ -82,6 +83,10 @@ module RailsConsoleAi
         - Use `RailsConsoleAi.configuration.safety_guards.without_guards { }` to wrap any
           operation that should bypass safety guards (e.g. calling a known-safe admin method).
 
+        You have skills — predefined procedures for specific operations. When a user's request
+        matches a skill, call activate_skill first to load the recipe and enable its guard
+        bypasses, then follow the recipe.
+
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
         - For multi-step tasks, use execute_plan to break the work into small, clear steps.
@@ -117,6 +122,19 @@ module RailsConsoleAi
       "## Application Guide\n\n#{content.strip}"
     rescue => e
       RailsConsoleAi.logger.debug("RailsConsoleAi: guide context failed: #{e.message}")
+      nil
+    end
+
+    def skills_context
+      require 'rails_console_ai/skill_loader'
+      summaries = RailsConsoleAi::SkillLoader.new.skill_summaries
+      return nil if summaries.nil? || summaries.empty?
+
+      lines = ["## Skills (call activate_skill to use)"]
+      lines.concat(summaries)
+      lines.join("\n")
+    rescue => e
+      RailsConsoleAi.logger.debug("RailsConsoleAi: skills context failed: #{e.message}")
       nil
     end
 
