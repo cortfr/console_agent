@@ -623,7 +623,7 @@ module RailsConsoleAi
     end
 
     def context_builder
-      @context_builder ||= ContextBuilder.new
+      @context_builder ||= ContextBuilder.new(channel_mode: @channel.mode)
     end
 
     def binding_variable_summary

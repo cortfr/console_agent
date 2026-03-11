@@ -1,7 +1,8 @@
 module RailsConsoleAi
   class ContextBuilder
-    def initialize(config = RailsConsoleAi.configuration)
+    def initialize(config = RailsConsoleAi.configuration, channel_mode: nil)
       @config = config
+      @channel_mode = channel_mode
     end
 
     def build
@@ -16,6 +17,8 @@ module RailsConsoleAi
       parts << smart_system_instructions
       parts << environment_context
       parts << guide_context
+      parts << trusted_methods_context
+      parts << pinned_memory_context
       parts << memory_context
       parts.compact.join("\n\n")
     end
@@ -76,6 +79,8 @@ module RailsConsoleAi
           (e.g. `api = SalesforceApi.new(step1)`).
         - If the user asks you to provide code for them to run later (not execute now), put it
           in a ```ruby code block in your text response.
+        - Use `RailsConsoleAi.configuration.safety_guards.without_guards { }` to wrap any
+          operation that should bypass safety guards (e.g. calling a known-safe admin method).
 
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
@@ -92,6 +97,19 @@ module RailsConsoleAi
       PROMPT
     end
 
+    def trusted_methods_context
+      methods = Array(@config.bypass_guards_for_methods)
+      if @channel_mode
+        channel_cfg = @config.channels[@channel_mode] || {}
+        methods = methods | Array(channel_cfg['bypass_guards_for_methods'])
+      end
+      return nil if methods.empty?
+
+      lines = ["## Trusted Methods (safety guards bypassed automatically)"]
+      methods.each { |m| lines << "- #{m}" }
+      lines.join("\n")
+    end
+
     def guide_context
       content = RailsConsoleAi.storage.read(RailsConsoleAi::GUIDE_KEY)
       return nil if content.nil? || content.strip.empty?
@@ -99,6 +117,28 @@ module RailsConsoleAi
       "## Application Guide\n\n#{content.strip}"
     rescue => e
       RailsConsoleAi.logger.debug("RailsConsoleAi: guide context failed: #{e.message}")
+      nil
+    end
+
+    def pinned_memory_context
+      return nil unless @channel_mode
+
+      channel_cfg = @config.channels[@channel_mode] || {}
+      pinned_tags = channel_cfg['pinned_memory_tags'] || []
+      return nil if pinned_tags.empty?
+
+      require 'rails_console_ai/tools/memory_tools'
+      sections = pinned_tags.filter_map do |tag|
+        content = Tools::MemoryTools.new.recall_memories(tag: tag)
+        next if content.nil? || content.include?("No memories")
+        content
+      end
+      return nil if sections.empty?
+
+      "## Pinned Memories (always available — no need to recall_memories for these)\n\n" \
+        + sections.join("\n\n")
+    rescue => e
+      RailsConsoleAi.logger.debug("RailsConsoleAi: pinned memory context failed: #{e.message}")
       nil
     end
 

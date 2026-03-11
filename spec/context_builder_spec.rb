@@ -14,6 +14,62 @@ RSpec.describe RailsConsoleAi::ContextBuilder do
 
   after { FileUtils.rm_rf(tmpdir) }
 
+  describe 'pinned_memory_context' do
+    let(:memory_tools) { RailsConsoleAi::Tools::MemoryTools.new(storage) }
+
+    before do
+      RailsConsoleAi.configure { |c| c.memories_enabled = true }
+      require 'rails_console_ai/tools/memory_tools'
+      memory_tools.save_memory(name: 'Sharding Pattern', description: 'Use Shard.current', tags: ['sharding'])
+    end
+
+    it 'returns nil when channel_mode is nil' do
+      builder = described_class.new(channel_mode: nil)
+      result = builder.build
+      expect(result).not_to include('Pinned Memories')
+    end
+
+    it 'returns nil when channel_mode has no matching config' do
+      RailsConsoleAi.configure { |c| c.channels = {} }
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+      expect(result).not_to include('Pinned Memories')
+    end
+
+    it 'returns nil when pinned_memories list is empty' do
+      RailsConsoleAi.configure { |c| c.channels = { 'slack' => { 'pinned_memory_tags' => [] } } }
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+      expect(result).not_to include('Pinned Memories')
+    end
+
+    it 'includes full memory content for matching tags' do
+      RailsConsoleAi.configure { |c| c.channels = { 'slack' => { 'pinned_memory_tags' => ['sharding'] } } }
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+      expect(result).to include('## Pinned Memories')
+      expect(result).to include('Sharding Pattern')
+    end
+
+    it 'places pinned memories before the summary list' do
+      RailsConsoleAi.configure { |c| c.channels = { 'slack' => { 'pinned_memory_tags' => ['sharding'] } } }
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+      pinned_pos = result.index('## Pinned Memories')
+      summary_pos = result.index('## Memories')
+      expect(pinned_pos).not_to be_nil
+      expect(summary_pos).not_to be_nil
+      expect(pinned_pos).to be < summary_pos
+    end
+
+    it 'omits section gracefully when tag matches no memories' do
+      RailsConsoleAi.configure { |c| c.channels = { 'slack' => { 'pinned_memory_tags' => ['nonexistent_tag'] } } }
+      builder = described_class.new(channel_mode: 'slack')
+      result = builder.build
+      expect(result).not_to include('## Pinned Memories')
+    end
+  end
+
   describe 'guide_context' do
     it 'includes guide content when file exists' do
       storage.write(RailsConsoleAi::GUIDE_KEY, "# My App\nThis is a Rails app.")

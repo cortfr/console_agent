@@ -79,7 +79,7 @@ module RailsConsoleAi
       end
 
       def mode
-        'interactive'
+        'console'
       end
 
       def supports_editing?

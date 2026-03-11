@@ -76,4 +76,16 @@ RailsConsoleAi.configure do |config|
   # config.safety_guard :jobs do |&execute|
   #   Sidekiq::Testing.fake! { execute.call }
   # end
+  #
+  # Bypass ALL safety guards when specific methods are called (e.g. trusted admin actions):
+  # config.bypass_guards_for_methods = [
+  #   'ChangeApproval#approve_by!',
+  #   'ChangeApproval#reject_by!'
+  # ]
+
+  # Per-channel settings (channel mode keys: 'slack', 'console'):
+  # config.channels = {
+  #   'slack'   => { 'pinned_memory_tags' => ['sharding'], 'bypass_guards_for_methods' => ['ChangeApproval#approve_by!'] },
+  #   'console' => { 'pinned_memory_tags' => [] }
+  # }
 end

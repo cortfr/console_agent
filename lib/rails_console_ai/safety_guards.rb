@@ -85,12 +85,79 @@ module RailsConsoleAi
     # Compose all guards around a block of code.
     # Each guard is an around-block: guard.call { inner }
     # Result: guard_1 { guard_2 { guard_3 { yield } } }
-    def wrap(&block)
+    def wrap(channel_mode: nil, &block)
       return yield unless @enabled && !@guards.empty?
 
-      @guards.values.reduce(block) { |inner, guard|
-        -> { guard.call(&inner) }
-      }.call
+      install_skills_once!
+      bypass_set = resolve_bypass_methods(channel_mode)
+
+      prev_active = Thread.current[:rails_console_ai_session_active]
+      prev_bypass = Thread.current[:rails_console_ai_bypass_methods]
+      Thread.current[:rails_console_ai_session_active] = true
+      Thread.current[:rails_console_ai_bypass_methods] = bypass_set
+      begin
+        @guards.values.reduce(block) { |inner, guard|
+          -> { guard.call(&inner) }
+        }.call
+      ensure
+        Thread.current[:rails_console_ai_session_active] = prev_active
+        Thread.current[:rails_console_ai_bypass_methods] = prev_bypass
+      end
+    end
+
+    private
+
+    def resolve_bypass_methods(channel_mode)
+      config = RailsConsoleAi.configuration
+      methods = Set.new(config.bypass_guards_for_methods)
+      if channel_mode
+        channel_cfg = config.channels[channel_mode] || {}
+        (channel_cfg['bypass_guards_for_methods'] || []).each { |m| methods << m }
+      end
+      methods
+    end
+
+    def install_skills_once!
+      return if @skills_installed
+      (@skills_mutex ||= Mutex.new).synchronize do
+        return if @skills_installed
+        all_methods = Set.new(RailsConsoleAi.configuration.bypass_guards_for_methods)
+        RailsConsoleAi.configuration.channels.each_value do |cfg|
+          (cfg['bypass_guards_for_methods'] || []).each { |m| all_methods << m }
+        end
+        all_methods.each { |spec| install_skill!(spec) }
+        @skills_installed = true
+      end
+    end
+
+    def install_skill!(spec)
+      class_name, method_name = spec.split('#')
+      klass = Object.const_get(class_name) rescue return
+      method_sym = method_name.to_sym
+
+      bypass_mod = Module.new do
+        define_method(method_sym) do |*args, &blk|
+          if Thread.current[:rails_console_ai_bypass_methods]&.include?(spec)
+            RailsConsoleAi.configuration.safety_guards.without_guards { super(*args, &blk) }
+          else
+            super(*args, &blk)
+          end
+        end
+      end
+      klass.prepend(bypass_mod)
+    end
+
+    public
+
+    # Bypass all safety guards for the duration of the block.
+    # Thread-safe: uses a thread-local flag that is restored after the block,
+    # even if the block raises an exception.
+    def without_guards
+      prev = Thread.current[:rails_console_ai_bypass_guards]
+      Thread.current[:rails_console_ai_bypass_guards] = true
+      yield
+    ensure
+      Thread.current[:rails_console_ai_bypass_guards] = prev
     end
   end
 
@@ -106,6 +173,7 @@ module RailsConsoleAi
       private
 
       def rails_console_ai_check_write!(sql)
+        return if Thread.current[:rails_console_ai_bypass_guards]
         return unless Thread.current[:rails_console_ai_block_writes] && sql.match?(WRITE_PATTERN)
 
         table = sql.match(TABLE_PATTERN)&.captures&.first
@@ -177,6 +245,8 @@ module RailsConsoleAi
 
       def request(req, *args, &block)
         if Thread.current[:rails_console_ai_block_http] && !SAFE_METHODS.include?(req.method)
+          return super if Thread.current[:rails_console_ai_bypass_guards]
+
           host = @address.to_s
           guards = RailsConsoleAi.configuration.safety_guards
           unless guards.allowed?(:http_mutations, host)
@@ -205,6 +275,8 @@ module RailsConsoleAi
 
     def self.mailers
       ->(&block) {
+        return block.call if Thread.current[:rails_console_ai_bypass_guards]
+
         old_value = ActionMailer::Base.perform_deliveries
         ActionMailer::Base.perform_deliveries = false
         begin

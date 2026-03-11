@@ -93,6 +93,79 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
     end
   end
 
+  describe '#without_guards' do
+    let(:write_adapter) do
+      klass = Class.new do
+        def execute(sql, *args, **kwargs) = sql
+      end
+      klass.prepend(RailsConsoleAi::BuiltinGuards::WriteBlocker)
+      klass.new
+    end
+
+    let(:http_adapter) do
+      klass = Class.new do
+        attr_accessor :address
+        def initialize = (@address = 'example.com')
+        def request(req, *args, &block) = "#{req.method} #{req.path}"
+      end
+      klass.prepend(RailsConsoleAi::BuiltinGuards::HttpBlocker)
+      klass.new
+    end
+
+    let(:post_req) { Struct.new(:method, :path).new('POST', '/foo') }
+
+    before do
+      Thread.current[:rails_console_ai_block_writes] = true
+      Thread.current[:rails_console_ai_block_http]   = true
+    end
+
+    after do
+      Thread.current[:rails_console_ai_block_writes]   = false
+      Thread.current[:rails_console_ai_block_http]     = false
+      Thread.current[:rails_console_ai_bypass_guards]  = nil
+    end
+
+    it 'allows writes inside the block even when guards are enabled' do
+      guards.without_guards do
+        expect(write_adapter.execute("INSERT INTO users (name) VALUES ('test')"))
+          .to eq("INSERT INTO users (name) VALUES ('test')")
+      end
+    end
+
+    it 'allows HTTP mutations inside the block' do
+      guards.without_guards do
+        expect(http_adapter.request(post_req)).to eq('POST /foo')
+      end
+    end
+
+    it 're-enables blocking after the block' do
+      guards.without_guards { }
+      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+      expect { write_adapter.execute("INSERT INTO users (name) VALUES ('test')") }
+        .to raise_error(RailsConsoleAi::SafetyError)
+    end
+
+    it 're-enables blocking even if the block raises' do
+      begin
+        guards.without_guards { raise "boom" }
+      rescue
+      end
+      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+      expect { write_adapter.execute("INSERT INTO users (name) VALUES ('test')") }
+        .to raise_error(RailsConsoleAi::SafetyError)
+    end
+
+    it 'nesting: inner without_guards works, outer context restored after' do
+      guards.without_guards do
+        guards.without_guards do
+          expect(Thread.current[:rails_console_ai_bypass_guards]).to be true
+        end
+        expect(Thread.current[:rails_console_ai_bypass_guards]).to be true
+      end
+      expect(Thread.current[:rails_console_ai_bypass_guards]).to be_nil
+    end
+  end
+
   describe '#wrap' do
     it 'yields directly when no guards are registered' do
       result = guards.wrap { 42 }
@@ -167,6 +240,160 @@ RSpec.describe RailsConsoleAi::SafetyGuards do
       expect {
         guards.wrap { 42 }
       }.to raise_error(RuntimeError, "blocked!")
+    end
+
+    it 'sets session_active flag during execution' do
+      guards.add(:test) { |&b| b.call }
+      flag_during = nil
+      guards.wrap { flag_during = Thread.current[:rails_console_ai_session_active] }
+      expect(flag_during).to be true
+    end
+
+    it 'clears session_active flag after execution' do
+      guards.add(:test) { |&b| b.call }
+      guards.wrap { }
+      expect(Thread.current[:rails_console_ai_session_active]).to be_nil
+    end
+
+    it 'clears session_active flag after execution even on exception' do
+      guards.add(:test) { |&b| b.call }
+      begin
+        guards.wrap { raise "boom" }
+      rescue
+      end
+      expect(Thread.current[:rails_console_ai_session_active]).to be_nil
+    end
+
+    context 'install_skills_once!' do
+      let(:target_class) do
+        klass = Class.new do
+          def guarded_method
+            :original
+          end
+        end
+        stub_const('FakeTargetClass', klass)
+        klass
+      end
+
+      before do
+        target_class # ensure constant is defined
+        RailsConsoleAi.configuration.bypass_guards_for_methods = ['FakeTargetClass#guarded_method']
+        guards.add(:test) { |&b| b.call }
+      end
+
+      after do
+        RailsConsoleAi.configuration.bypass_guards_for_methods = []
+        Thread.current[:rails_console_ai_bypass_methods] = nil
+      end
+
+      it 'skills are not installed before first wrap call' do
+        expect(guards.instance_variable_get(:@skills_installed)).to be_nil
+      end
+
+      it 'skills are installed lazily on first wrap call' do
+        expect(guards.instance_variable_get(:@skills_installed)).to be_nil
+        guards.wrap { }
+        expect(guards.instance_variable_get(:@skills_installed)).to be true
+      end
+
+      it 'install is idempotent - prepend happens once even when wrap is called multiple times' do
+        ancestor_count_before = target_class.ancestors.length
+        3.times { guards.wrap { } }
+        ancestor_count_after = target_class.ancestors.length
+        # Only one module should have been prepended despite three wrap calls
+        expect(ancestor_count_after - ancestor_count_before).to eq(1)
+      end
+
+      it 'shim is a no-op when bypass_methods is nil (outside wrap)' do
+        guards.wrap { } # install shims
+        Thread.current[:rails_console_ai_bypass_methods] = nil
+        instance = target_class.new
+        expect(instance.guarded_method).to eq(:original)
+      end
+
+      it 'shim bypasses guards when method is in bypass_methods set' do
+        instance = target_class.new
+        result = nil
+        guards.wrap do
+          result = instance.guarded_method
+        end
+        expect(result).to eq(:original)
+      end
+    end
+
+    context 'channel-specific bypass methods' do
+      let(:target_class) do
+        klass = Class.new do
+          def channel_method
+            :original
+          end
+        end
+        stub_const('FakeChannelClass', klass)
+        klass
+      end
+
+      before do
+        target_class
+        RailsConsoleAi.configuration.bypass_guards_for_methods = []
+        RailsConsoleAi.configuration.channels = {
+          'slack' => { 'bypass_guards_for_methods' => ['FakeChannelClass#channel_method'] },
+          'console' => {}
+        }
+        guards.add(:test) { |&b| b.call }
+      end
+
+      after do
+        RailsConsoleAi.configuration.channels = {}
+        Thread.current[:rails_console_ai_bypass_methods] = nil
+      end
+
+      it 'installs shims from all channel configs' do
+        ancestor_count_before = target_class.ancestors.length
+        guards.wrap(channel_mode: 'slack') { }
+        ancestor_count_after = target_class.ancestors.length
+        expect(ancestor_count_after - ancestor_count_before).to eq(1)
+      end
+
+      it 'shim activates when method is in the active channel bypass set' do
+        instance = target_class.new
+        result = nil
+        guards.wrap(channel_mode: 'slack') do
+          result = instance.channel_method
+        end
+        expect(result).to eq(:original)
+      end
+
+      it 'shim is a no-op when method is not in the active channel bypass set' do
+        instance = target_class.new
+        result = nil
+        guards.wrap(channel_mode: 'console') do
+          result = instance.channel_method
+        end
+        expect(result).to eq(:original)
+      end
+
+      it 'merges global and channel-specific bypass methods' do
+        RailsConsoleAi.configuration.bypass_guards_for_methods = ['FakeChannelClass#channel_method']
+        instance = target_class.new
+        result = nil
+        guards.wrap(channel_mode: 'console') do
+          result = instance.channel_method
+        end
+        expect(result).to eq(:original)
+      end
+
+      it 'sets bypass_methods thread-local with correct set for channel' do
+        bypass_set = nil
+        guards.wrap(channel_mode: 'slack') do
+          bypass_set = Thread.current[:rails_console_ai_bypass_methods]
+        end
+        expect(bypass_set).to include('FakeChannelClass#channel_method')
+      end
+
+      it 'clears bypass_methods thread-local after execution' do
+        guards.wrap(channel_mode: 'slack') { }
+        expect(Thread.current[:rails_console_ai_bypass_methods]).to be_nil
+      end
     end
   end
 end
@@ -362,6 +589,19 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
           .to eq("SELECT * FROM users")
       end
     end
+
+    context 'when bypass_guards flag is set' do
+      before do
+        Thread.current[:rails_console_ai_block_writes]  = true
+        Thread.current[:rails_console_ai_bypass_guards] = true
+      end
+      after { Thread.current[:rails_console_ai_bypass_guards] = nil }
+
+      it 'allows writes even when block_writes is true' do
+        expect(adapter.execute("INSERT INTO users (name) VALUES ('test')"))
+          .to eq("INSERT INTO users (name) VALUES ('test')")
+      end
+    end
   end
 
   describe '.http_mutations' do
@@ -491,6 +731,19 @@ RSpec.describe RailsConsoleAi::BuiltinGuards do
       before { Thread.current[:rails_console_ai_block_http] = false }
 
       it 'allows all requests' do
+        expect(http.request(post_req)).to eq('POST /users')
+        expect(http.request(delete_req)).to eq('DELETE /users/1')
+      end
+    end
+
+    context 'when bypass_guards flag is set' do
+      before do
+        Thread.current[:rails_console_ai_block_http]     = true
+        Thread.current[:rails_console_ai_bypass_guards]  = true
+      end
+      after { Thread.current[:rails_console_ai_bypass_guards] = nil }
+
+      it 'allows HTTP mutations even when block_http is true' do
         expect(http.request(post_req)).to eq('POST /users')
         expect(http.request(delete_req)).to eq('DELETE /users/1')
       end

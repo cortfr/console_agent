@@ -364,7 +364,7 @@ module RailsConsoleAi
     end
 
     def with_safety_guards(&block)
-      RailsConsoleAi.configuration.safety_guards.wrap(&block)
+      RailsConsoleAi.configuration.safety_guards.wrap(channel_mode: @channel&.mode, &block)
     end
 
     # Check if an exception is or wraps a SafetyError (e.g. AR::StatementInvalid wrapping it)

@@ -141,6 +141,30 @@ Raise `RailsConsoleAi::SafetyError` in your app code to trigger the safe mode pr
 raise RailsConsoleAi::SafetyError, "Stripe charge blocked"
 ```
 
+### Allowing Specific Methods
+
+Some operations (like admin approvals) need to write to the database even when guards are active. Use `bypass_guards_for_methods` to declare methods that should bypass all safety guards when called during an AI session:
+
+```ruby
+RailsConsoleAi.configure do |config|
+  # Global — applies to all channels
+  config.bypass_guards_for_methods = [
+    'ChangeApproval#approve_by!',
+    'ChangeApproval#reject_by!'
+  ]
+
+  # Per-channel — only active in the specified channel
+  config.channels = {
+    'slack'   => { 'bypass_guards_for_methods' => ['Deployment#promote!'] },
+    'console' => {}
+  }
+end
+```
+
+Global and channel-specific methods are merged for the active channel. These method shims are installed lazily on the first AI execution (not at boot) and are session-scoped — they only bypass guards inside `SafetyGuards#wrap`. Outside of an AI session (e.g. in normal web requests), the methods behave normally with zero overhead beyond a single thread-local read.
+
+The AI is told about these trusted methods in its system prompt and will use them directly without triggering safety errors.
+
 ### Toggling Safe Mode
 
 - **`/danger`** in interactive mode toggles all guards off/on for the session
