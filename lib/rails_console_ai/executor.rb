@@ -65,37 +65,33 @@ module RailsConsoleAi
     ANY_CODE_FENCE_REGEX = /```\w*\s*\n.*?```/m
 
     def display_response(response)
-      # Slack: display full response as-is (code fences render natively).
-      # Code execution happens via the execute_plan tool, not code-fence extraction.
-      if @channel&.mode == 'slack'
-        $stdout.puts
-        @channel.display(response.strip) unless response.strip.empty?
-        return ''
-      end
+      # Code execution now happens via the execute_code tool, not code-fence extraction.
+      # Just display the full response text as-is.
+      text = response.to_s.strip
+      return '' if text.empty?
 
-      code = extract_code(response)
-      explanation = response.gsub(ANY_CODE_FENCE_REGEX, '').strip
-
+      $stdout.puts
       if @channel
-        $stdout.puts
-        @channel.display(explanation) unless explanation.empty?
-        @channel.display_code(code) unless code.empty?
+        @channel.display(text)
       else
-        $stdout.puts
-        $stdout.puts colorize(explanation, :cyan) unless explanation.empty?
-
-        unless code.empty?
-          $stdout.puts
-          $stdout.puts colorize("# Generated code:", :yellow)
-          $stdout.puts highlight_code(code)
-          $stdout.puts
-        end
+        $stdout.puts colorize(text, :cyan)
       end
 
-      code
+      '' # No code to extract — the LLM uses execute_code tool instead
     end
 
-    def execute(code)
+    def display_code_block(code)
+      if @channel
+        @channel.display_code(code)
+      else
+        $stdout.puts
+        $stdout.puts colorize("# Generated code:", :yellow)
+        $stdout.puts highlight_code(code)
+        $stdout.puts
+      end
+    end
+
+    def execute(code, display: true)
       return nil if code.nil? || code.strip.empty?
 
       @last_error = nil
@@ -126,11 +122,11 @@ module RailsConsoleAi
       end
 
       # Send captured puts output through channel before the return value
-      if @channel && !captured_output.string.empty?
+      if display && @channel && !captured_output.string.empty?
         @channel.display_result_output(captured_output.string)
       end
 
-      display_result(result)
+      display_result(result) if display
 
       @last_output = captured_output.string
       result

@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory execute_plan].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil)
         @executor = executor
@@ -274,6 +274,19 @@ module RailsConsoleAi
         return unless @executor
 
         register(
+          name: 'execute_code',
+          description: 'Execute Ruby code in the Rails console and return the result. Use this for all code execution — simple queries, data lookups, reports, etc. The output of puts/print statements is automatically shown to the user. The return value is sent back to you so you can summarize the findings.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'code' => { 'type' => 'string', 'description' => 'Ruby code to execute' }
+            },
+            'required' => ['code']
+          },
+          handler: ->(args) { execute_code(args['code']) }
+        )
+
+        register(
           name: 'execute_plan',
           description: 'Execute a multi-step plan. Each step has a description and Ruby code. The plan is shown to the user for approval, then each step is executed in order. After each step executes, its return value is stored as step1, step2, etc. Use these variables in later steps to reference earlier results (e.g. `token = step1`).',
           parameters: {
@@ -296,6 +309,45 @@ module RailsConsoleAi
           },
           handler: ->(args) { execute_plan(args['steps'] || []) }
         )
+      end
+
+      def execute_code(code)
+        return 'No code provided.' if code.nil? || code.strip.empty?
+
+        # Show the code to the user
+        @executor.display_code_block(code)
+
+        # Slack: execute directly, suppress display (output goes back to LLM as tool result).
+        # Console: show code and confirm before executing, display output directly.
+        exec_result = if @channel&.mode == 'slack'
+                        @executor.execute(code, display: false)
+                      elsif RailsConsoleAi.configuration.auto_execute
+                        @executor.execute(code, display: false)
+                      else
+                        @executor.confirm_and_execute(code)
+                      end
+
+        if @executor.last_cancelled?
+          return "User declined to execute the code."
+        end
+
+        if @executor.last_safety_error
+          if @channel && !@channel.supports_danger?
+            return "BLOCKED by safety guard: #{@executor.last_error}. Write operations are not permitted in this channel."
+          else
+            exec_result = @executor.offer_danger_retry(code)
+          end
+        end
+
+        if @executor.last_error
+          return "ERROR: #{@executor.last_error}"
+        end
+
+        output = @executor.last_output
+        parts = []
+        parts << "Output:\n#{output.strip}" if output && !output.strip.empty?
+        parts << "Return value: #{exec_result.inspect}"
+        parts.join("\n\n")
       end
 
       def execute_plan(steps)
