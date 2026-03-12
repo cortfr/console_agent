@@ -4,6 +4,8 @@ module RailsConsoleAi
                 :interactive_session_id, :session_name
 
     RECENT_OUTPUTS_TO_KEEP = 2
+    LARGE_OUTPUT_THRESHOLD = 10_000      # chars — truncate tool results larger than this immediately
+    LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil)
       @binding_context = binding_context
@@ -736,6 +738,10 @@ module RailsConsoleAi
           @channel.display_dim("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
         end
 
+        # Trim old tool outputs between rounds to prevent context explosion.
+        # The LLM can still retrieve omitted outputs via recall_output.
+        messages = trim_old_outputs(messages) if round > 0
+
         if RailsConsoleAi.configuration.debug
           debug_pre_call(round, messages, active_system_prompt, tools, total_input, total_output)
         end
@@ -790,8 +796,16 @@ module RailsConsoleAi
           end
 
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
-          if tool_result.to_s.length > 200
-            tool_msg[:output_id] = @executor.store_output(tool_result.to_s)
+          full_text = tool_result.to_s
+          if full_text.length > LARGE_OUTPUT_THRESHOLD
+            output_id = @executor.store_output(full_text)
+            tool_msg[:output_id] = output_id
+            truncated = full_text[0, LARGE_OUTPUT_PREVIEW_CHARS]
+            truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
+            tool_msg = provider.format_tool_result(tc[:id], truncated)
+            tool_msg[:output_id] = output_id
+          elsif full_text.length > 200
+            tool_msg[:output_id] = @executor.store_output(full_text)
           end
           messages << tool_msg
           new_messages << tool_msg
