@@ -940,6 +940,8 @@ module RailsConsoleAi
       when 'save_memory'     then "(\"#{args['name']}\")"
       when 'delete_memory'   then "(\"#{args['name']}\")"
       when 'recall_memories' then args['query'] ? "(\"#{args['query']}\")" : ''
+      when 'activate_skill' then "(\"#{args['name']}\")"
+      when 'recall_output'   then "(#{args['id']})"
       when 'execute_plan'
         steps = args['steps']
         steps ? "(#{steps.length} steps)" : ''
