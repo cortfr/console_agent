@@ -255,6 +255,8 @@ module RailsConsoleAi
           @engine.display_conversation
         when '/cost'
           @engine.display_cost_summary
+        when '/model'
+          display_model_info
         when '/think'
           @engine.upgrade_to_thinking_model
         when /\A\/expand/
@@ -320,6 +322,27 @@ module RailsConsoleAi
         end
       end
 
+      def display_model_info
+        config = RailsConsoleAi.configuration
+        model = config.resolved_model
+        thinking = config.resolved_thinking_model
+        pricing = Configuration::PRICING[model]
+
+        @real_stdout.puts "\e[36m  Model info:\e[0m"
+        @real_stdout.puts "\e[2m    Provider:        #{config.provider}\e[0m"
+        @real_stdout.puts "\e[2m    Model:           #{model}\e[0m"
+        @real_stdout.puts "\e[2m    Thinking model:  #{thinking}\e[0m"
+        @real_stdout.puts "\e[2m    Max tokens:      #{config.resolved_max_tokens}\e[0m"
+        if pricing
+          @real_stdout.puts "\e[2m    Pricing:         $#{pricing[:input] * 1_000_000}/M in, $#{pricing[:output] * 1_000_000}/M out\e[0m"
+          if pricing[:cache_read]
+            @real_stdout.puts "\e[2m    Cache pricing:   $#{pricing[:cache_read] * 1_000_000}/M read, $#{pricing[:cache_write] * 1_000_000}/M write\e[0m"
+          end
+        end
+        @real_stdout.puts "\e[2m    Bedrock region:  #{config.bedrock_region}\e[0m" if config.provider == :bedrock
+        @real_stdout.puts "\e[2m    Local URL:       #{config.local_url}\e[0m" if config.provider == :local
+      end
+
       def handle_name_command(input)
         name = input.sub('/name', '').strip.gsub(/\A(['"])(.*)\1\z/, '\2')
         if name.empty?
@@ -344,6 +367,7 @@ module RailsConsoleAi
           @real_stdout.puts "\e[2m    /danger      Toggle safe mode (currently #{safe_status})\e[0m"
           @real_stdout.puts "\e[2m    /safe        Show safety guard status\e[0m"
         end
+        @real_stdout.puts "\e[2m    /model       Show provider, model, and pricing info\e[0m"
         @real_stdout.puts "\e[2m    /think       Switch to thinking model\e[0m"
         @real_stdout.puts "\e[2m    /compact     Summarize conversation to reduce context\e[0m"
         @real_stdout.puts "\e[2m    /usage       Show session token totals\e[0m"

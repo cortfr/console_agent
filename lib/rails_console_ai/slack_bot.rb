@@ -333,6 +333,12 @@ module RailsConsoleAi
         return
       end
 
+      # Bang commands (!name, !usage, etc.) — handle before LLM
+      if text.strip.start_with?('!')
+        handle_bang_command(session, channel_id, thread_ts, text.strip, user_name)
+        return
+      end
+
       # Quick greeting — no need to hit the LLM
       if !session && GREETINGS.include?(command)
         post_message(channel: channel_id, thread_ts: thread_ts, text: ":wave: Hey @#{user_name}! What would you like to look into today?")
@@ -510,6 +516,181 @@ module RailsConsoleAi
         puts "[#{channel_id}/#{thread_ts}] cancel: no session"
       end
       @mutex.synchronize { @sessions.delete(thread_ts) }
+    end
+
+    def handle_bang_command(session, channel_id, thread_ts, text, user_name)
+      parts = text.sub(/\A!/, '').split(/\s+/, 2)
+      cmd = parts[0].to_s.downcase
+      arg = parts[1].to_s.strip
+
+      # !name requires an active session (or creates one)
+      # Other commands require an existing session
+      unless session
+        if cmd == 'name' && !arg.empty?
+          # Start a session so we can name it
+          start_direct_session(channel_id, thread_ts, user_name)
+          session = @mutex.synchronize { @sessions[thread_ts] }
+        else
+          post_message(channel: channel_id, thread_ts: thread_ts,
+            text: "No active session in this thread. Start a conversation first.")
+          return
+        end
+      end
+
+      engine = session[:engine]
+
+      case cmd
+      when 'name'
+        handle_bang_name(engine, channel_id, thread_ts, arg)
+      when 'usage'
+        summary = bang_usage(engine)
+        post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
+      when 'cost'
+        summary = bang_cost(engine)
+        post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
+      when 'compact'
+        session[:thread] = Thread.new do
+          Thread.current.report_on_exception = false
+          begin
+            before = engine.history.length
+            engine.compact_history
+            after = engine.history.length
+            if after < before
+              post_message(channel: channel_id, thread_ts: thread_ts,
+                text: "Compacted: #{before} messages → #{after} summary message")
+            end
+          rescue => e
+            post_message(channel: channel_id, thread_ts: thread_ts,
+              text: "Compact failed: #{e.message}")
+          ensure
+            ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
+          end
+        end
+      when 'model'
+        summary = bang_model
+        post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
+      when 'think'
+        engine.upgrade_to_thinking_model
+        model = RailsConsoleAi.configuration.resolved_model
+        post_message(channel: channel_id, thread_ts: thread_ts,
+          text: "Switched to thinking model: `#{model}`")
+      when 'context'
+        summary = bang_context(engine)
+        post_message(channel: channel_id, thread_ts: thread_ts, text: summary)
+      when 'retry'
+        session[:thread] = Thread.new do
+          Thread.current.report_on_exception = false
+          Thread.current[:log_prefix] = session[:channel].instance_variable_get(:@log_prefix)
+          begin
+            engine.retry_last_code
+            engine.send(:log_interactive_turn)
+          rescue => e
+            post_message(channel: channel_id, thread_ts: thread_ts,
+              text: "Retry failed: #{e.message}")
+          ensure
+            ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
+          end
+        end
+      else
+        commands = %w[name usage cost model compact think context retry].map { |c| "`!#{c}`" }
+        post_message(channel: channel_id, thread_ts: thread_ts,
+          text: "Unknown command `!#{cmd}`. Available: #{commands.join(', ')}")
+      end
+    end
+
+    def handle_bang_name(engine, channel_id, thread_ts, arg)
+      name = arg.gsub(/\A['"]|['"]\z/, '')
+      if name.empty?
+        current = engine.session_name
+        if current
+          post_message(channel: channel_id, thread_ts: thread_ts,
+            text: "Session name: *#{current}*\nResume in console with: `ai_resume \"#{current}\"`")
+        else
+          post_message(channel: channel_id, thread_ts: thread_ts,
+            text: "Usage: `!name <label>` — e.g. `!name salesforce_debug`")
+        end
+      else
+        engine.set_session_name(name)
+        post_message(channel: channel_id, thread_ts: thread_ts,
+          text: "Session named: *#{name}*\nResume in console with: `ai_resume \"#{name}\"`")
+      end
+    end
+
+    def bang_model
+      config = RailsConsoleAi.configuration
+      model = config.resolved_model
+      thinking = config.resolved_thinking_model
+      pricing = Configuration::PRICING[model]
+
+      lines = ["*Model info:*"]
+      lines << "  Provider: `#{config.provider}`"
+      lines << "  Model: `#{model}`"
+      lines << "  Thinking model: `#{thinking}`"
+      lines << "  Max tokens: #{config.resolved_max_tokens}"
+      if pricing
+        lines << "  Pricing: $#{pricing[:input] * 1_000_000}/M in, $#{pricing[:output] * 1_000_000}/M out"
+        if pricing[:cache_read]
+          lines << "  Cache: $#{pricing[:cache_read] * 1_000_000}/M read, $#{pricing[:cache_write] * 1_000_000}/M write"
+        end
+      end
+      lines << "  Region: `#{config.bedrock_region}`" if config.provider == :bedrock
+      lines.join("\n")
+    end
+
+    def bang_usage(engine)
+      input = engine.total_input_tokens
+      output = engine.total_output_tokens
+      total = input + output
+      return "No usage yet." if total == 0
+      "Session totals — in: #{input} | out: #{output} | total: #{total}"
+    end
+
+    def bang_cost(engine)
+      token_usage = engine.instance_variable_get(:@token_usage)
+      return "No usage yet." if token_usage.empty?
+
+      lines = ["*Cost estimate:*"]
+      total_cost = 0.0
+
+      token_usage.each do |model, usage|
+        pricing = Configuration::PRICING[model]
+        pricing ||= { input: 0.0, output: 0.0 } if RailsConsoleAi.configuration.provider == :local
+        input_str = "in: #{usage[:input]}"
+        output_str = "out: #{usage[:output]}"
+
+        if pricing
+          cost = (usage[:input] * pricing[:input]) + (usage[:output] * pricing[:output])
+          cache_read = usage[:cache_read] || 0
+          cache_write = usage[:cache_write] || 0
+          if (cache_read > 0 || cache_write > 0) && pricing[:cache_read]
+            cost -= cache_read * pricing[:input]
+            cost += cache_read * pricing[:cache_read]
+            cost += cache_write * (pricing[:cache_write] - pricing[:input])
+          end
+          total_cost += cost
+          cache_str = ""
+          cache_str = "  cache r: #{cache_read} w: #{cache_write}" if cache_read > 0 || cache_write > 0
+          lines << "  `#{model}`: #{input_str}  #{output_str}#{cache_str}  ~$#{'%.2f' % cost}"
+        else
+          lines << "  `#{model}`: #{input_str}  #{output_str}  (pricing unknown)"
+        end
+      end
+
+      lines << "*Total: ~$#{'%.2f' % total_cost}*"
+      lines.join("\n")
+    end
+
+    def bang_context(engine)
+      history = engine.history
+      return "No conversation history yet." if history.empty?
+
+      msg_count = history.length
+      chars = history.sum { |m| m[:content].to_s.length }
+      user_msgs = history.count { |m| m[:role].to_s == 'user' }
+      asst_msgs = history.count { |m| m[:role].to_s == 'assistant' }
+      name_str = engine.session_name ? " (*#{engine.session_name}*)" : ""
+
+      "Context#{name_str}: #{msg_count} messages (#{user_msgs} user, #{asst_msgs} assistant), ~#{chars} chars"
     end
 
     def count_bot_messages(channel_id, thread_ts)
