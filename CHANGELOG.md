@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0]
+
+- Add per-user system prompt seeding
+- Improve explicit code execution through Slack bot
+- Show last thinking output before prompting
+- Add Skills system
+- Add `bypass_guards_for_methods` to allow specific methods to skip safety guards
+- Add `execute_code` tool for simple query execution without code fences
+- Support `<code>` tags in Slack responses
+- Improve Slack bot server logging and keepalive visibility
+- Improve database safety guards in Rails 5
+
 ## [0.19.0]
 
 - Fix duplicate tool result IDs in AWS Bedrock provider
