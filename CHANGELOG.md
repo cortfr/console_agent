@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0]
+
+- Add Slack @mention support and channel name tracking
+- Stop looping after user cancels execution
+- Remove edit feature from executor
+- Include more info in tool call log line
+- Support class methods in `bypass_guards_for_methods`
+- Rename setup tasks to `ai_db_setup` and `ai_db_migrate`
+- Fix effective model resolution in multi-threaded Slack bot
+- Fix cost tracking with prompt caching through Bedrock
+- Add `/unthink` command
+- Make `!think` / `/think` thread-safe for Slack
+- Fix truncating console output
+- Reduce cost by deferring large output until LLM requests it
+- Add `!name`, `!model`, and `/model` commands to Slack and console
+
 ## [0.20.0]
 
 - Add per-user system prompt seeding
