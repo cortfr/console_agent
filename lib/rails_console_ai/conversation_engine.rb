@@ -297,7 +297,6 @@ module RailsConsoleAi
       end
 
       if @executor.last_cancelled?
-        @history << { role: :user, content: "User declined to execute the code." }
         :cancelled
       elsif @executor.last_safety_error
         exec_result = @executor.offer_danger_retry(code)
@@ -320,7 +319,6 @@ module RailsConsoleAi
           end
           :success
         else
-          @history << { role: :user, content: "User declined to execute with safe mode disabled." }
           :cancelled
         end
       elsif @executor.last_error
@@ -839,6 +837,10 @@ module RailsConsoleAi
           messages << tool_msg
           new_messages << tool_msg
         end
+
+        # If the user declined execution, don't call the LLM again —
+        # just return to the prompt so they can correct their request.
+        break if @executor.last_cancelled?
 
         exhausted = true if round == max_rounds - 1
       end
