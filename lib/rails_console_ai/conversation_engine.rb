@@ -615,6 +615,8 @@ module RailsConsoleAi
 
           This session has safety guards that block side effects (database writes, HTTP mutations, etc.).
           If an operation is blocked, the user will be prompted to allow it or disable guards.
+          Do NOT attempt to bypass or work around safety guards in your code — just write the
+          operation normally and let the safety system handle it.
         PROMPT
       end
     end

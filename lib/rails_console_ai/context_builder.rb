@@ -82,9 +82,6 @@ module RailsConsoleAi
           (e.g. `api = SalesforceApi.new(step1)`).
         - If the user asks you to provide code for them to run later (not execute now), put it
           in a ```ruby code block in your text response.
-        - Use `RailsConsoleAi.configuration.safety_guards.without_guards { }` to wrap any
-          operation that should bypass safety guards (e.g. calling a known-safe admin method).
-
         You have skills — predefined procedures for specific operations. When a user's request
         matches a skill, call activate_skill first to load the recipe and enable its guard
         bypasses, then follow the recipe.

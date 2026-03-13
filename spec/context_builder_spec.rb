@@ -138,6 +138,13 @@ RSpec.describe RailsConsoleAi::ContextBuilder do
     end
   end
 
+  describe 'without_guards is not exposed' do
+    it 'does not mention without_guards in the system prompt' do
+      result = builder.build
+      expect(result).not_to include('without_guards')
+    end
+  end
+
   describe 'guide_context' do
     it 'includes guide content when file exists' do
       storage.write(RailsConsoleAi::GUIDE_KEY, "# My App\nThis is a Rails app.")
