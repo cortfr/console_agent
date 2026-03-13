@@ -25,8 +25,10 @@ module RailsConsoleAi
       raise ConfigurationError, "slack_allowed_usernames must be configured (e.g. ['alice'] or 'ALL')" unless RailsConsoleAi.configuration.slack_allowed_usernames
 
       @bot_user_id = nil
-      @sessions = {}       # thread_ts → { channel:, engine:, thread: }
+      @sessions = {}       # thread_ts → { channel:, engine:, thread:, owner_user_id: }
       @user_cache = {}     # slack user_id → display_name
+      @channel_cache = {}  # channel_id → channel name
+      @processed_ts = {}   # ts → Time — dedup app_mention vs message events
       @mutex = Mutex.new
     end
 
@@ -282,33 +284,70 @@ module RailsConsoleAi
     def handle_event(msg)
       event = msg.dig(:payload, :event)
       return unless event
-      return unless event[:type] == "message"
+      return unless event[:type] == "message" || event[:type] == "app_mention"
 
       # Ignore bot messages, subtypes (edits/deletes), own messages
       return if event[:bot_id]
       return if event[:user] == @bot_user_id
       return if event[:subtype]
 
-      text = unescape_slack(event[:text])
+      raw_text = event[:text]
+      text = unescape_slack(raw_text)
       return unless text && !text.strip.empty?
 
       channel_id = event[:channel]
-      return unless watched_channel?(channel_id)
-
       thread_ts = event[:thread_ts] || event[:ts]
       user_id = event[:user]
+      is_dm = event[:channel_type] == "im"
+      mentioned = event[:type] == "app_mention" || mentions_bot?(raw_text)
+
+      # --- Channel gating (DMs skip this entirely) ---
+      unless is_dm
+        # Dedup: Slack fires both message and app_mention for @mentions
+        return if mentioned && dedup_event?(event[:ts])
+
+        # Strip bot mention from text
+        text = strip_bot_mention(text).strip
+        return if text.empty?
+
+        session = @mutex.synchronize { @sessions[thread_ts] }
+        if session
+          # Enforce session ownership
+          unless session[:owner_user_id] == user_id
+            # Non-owner: tell unrecognized users, silently ignore recognized non-owners
+            chk_name = resolve_user_name(user_id)
+            chk_list = Array(RailsConsoleAi.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
+            unless chk_list.include?('all') || chk_list.include?(chk_name.to_s.downcase)
+              puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{chk_name} << (ignored — not in allowed usernames)"
+              post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{chk_name}). Ask an admin to add you to the allowed usernames list.")
+            end
+            return
+          end
+          # Owner must @mention unless bot asked a question (waiting_for_reply?)
+          return unless mentioned || waiting_for_reply?(session[:channel])
+          # Log thread messages since last mention
+          thread_msgs = fetch_thread_messages(channel_id, thread_ts, since_ts: session[:last_seen_ts], exclude_ts: event[:ts])
+          log_thread_messages(thread_msgs, channel_id, thread_ts)
+          session[:last_seen_ts] = event[:ts]
+        else
+          # No existing session: only respond if @mentioned
+          return unless mentioned
+        end
+      end
+
+      # --- Common processing (DMs and channels) ---
       user_name = resolve_user_name(user_id)
 
       allowed_list = Array(RailsConsoleAi.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
       unless allowed_list.include?('all') || allowed_list.include?(user_name.to_s.downcase)
-        puts "[#{channel_id}/#{thread_ts}] @#{user_name} << (ignored — not in allowed usernames)"
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name} << (ignored — not in allowed usernames)"
         post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{user_name}). Ask an admin to add you to the allowed usernames list.")
         return
       end
 
-      puts "[#{channel_id}/#{thread_ts}] @#{user_name} << #{text.strip}"
+      puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name} << #{text.strip}"
 
-      session = @mutex.synchronize { @sessions[thread_ts] }
+      session ||= @mutex.synchronize { @sessions[thread_ts] }
 
       command = text.strip.downcase
       if command == 'cancel' || command == 'stop'
@@ -335,7 +374,7 @@ module RailsConsoleAi
 
       # Bang commands (!name, !usage, etc.) — handle before LLM
       if text.strip.start_with?('!')
-        handle_bang_command(session, channel_id, thread_ts, text.strip, user_name)
+        handle_bang_command(session, channel_id, thread_ts, text.strip, user_name, user_id)
         return
       end
 
@@ -348,21 +387,32 @@ module RailsConsoleAi
       # Direct code execution: code blocks or "> User.count" run code without LLM
       raw_code = extract_direct_code(text.strip)
       if raw_code
-        handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
+        handle_direct_code(session, channel_id, thread_ts, raw_code, user_name, user_id)
         return
       end
 
       if session
         handle_thread_reply(session, text.strip)
       else
-        # New thread, or existing thread after bot restart — start a fresh session
-        start_session(channel_id, thread_ts, text.strip, user_name)
+        # Fetch thread context if joining a mid-conversation thread
+        thread_context = nil
+        if !is_dm && event[:thread_ts]
+          thread_msgs = fetch_thread_messages(channel_id, thread_ts, exclude_ts: event[:ts])
+          log_thread_messages(thread_msgs, channel_id, thread_ts)
+          thread_context = build_thread_context(thread_msgs)
+        end
+        start_session(channel_id, thread_ts, text.strip, user_name, user_id: user_id, thread_context: thread_context)
+        # Track last seen message for subsequent mentions
+        if !is_dm
+          new_session = @mutex.synchronize { @sessions[thread_ts] }
+          new_session[:last_seen_ts] = event[:ts] if new_session
+        end
       end
     rescue => e
       RailsConsoleAi.logger.error("SlackBot event handling error: #{e.class}: #{e.message}")
     end
 
-    def start_session(channel_id, thread_ts, text, user_name)
+    def start_session(channel_id, thread_ts, text, user_name, user_id: nil, thread_context: nil)
       channel = Channel::Slack.new(
         slack_bot: self,
         channel_id: channel_id,
@@ -374,18 +424,24 @@ module RailsConsoleAi
       engine = ConversationEngine.new(
         binding_context: sandbox_binding,
         channel: channel,
-        slack_thread_ts: thread_ts
+        slack_thread_ts: thread_ts,
+        slack_channel_name: resolve_channel_name(channel_id)
       )
 
       # Try to restore conversation history from a previous session (e.g. after bot restart)
       restored = restore_from_db(engine, thread_ts)
 
-      session = { channel: channel, engine: engine, thread: nil }
+      # Prepend thread context only when joining a thread fresh (no DB session to restore)
+      if !restored && thread_context
+        text = "#{thread_context}\n\n#{text}"
+      end
+
+      session = { channel: channel, engine: engine, thread: nil, owner_user_id: user_id }
       @mutex.synchronize { @sessions[thread_ts] = session }
 
       session[:thread] = Thread.new do
         Thread.current.report_on_exception = false
-        Thread.current[:log_prefix] = "[#{channel_id}/#{thread_ts}] @#{user_name}"
+        Thread.current[:log_prefix] = "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name}"
         begin
           channel.display_dim("_session: #{channel_id}/#{thread_ts}_")
           if restored
@@ -440,10 +496,10 @@ module RailsConsoleAi
       end
     end
 
-    def handle_direct_code(session, channel_id, thread_ts, raw_code, user_name)
+    def handle_direct_code(session, channel_id, thread_ts, raw_code, user_name, user_id)
       # Ensure a session exists for this thread
       unless session
-        start_direct_session(channel_id, thread_ts, user_name)
+        start_direct_session(channel_id, thread_ts, user_name, user_id)
         session = @mutex.synchronize { @sessions[thread_ts] }
       end
 
@@ -473,7 +529,7 @@ module RailsConsoleAi
       end
     end
 
-    def start_direct_session(channel_id, thread_ts, user_name)
+    def start_direct_session(channel_id, thread_ts, user_name, user_id)
       channel = Channel::Slack.new(
         slack_bot: self,
         channel_id: channel_id,
@@ -485,13 +541,14 @@ module RailsConsoleAi
       engine = ConversationEngine.new(
         binding_context: sandbox_binding,
         channel: channel,
-        slack_thread_ts: thread_ts
+        slack_thread_ts: thread_ts,
+        slack_channel_name: resolve_channel_name(channel_id)
       )
 
       restore_from_db(engine, thread_ts)
       engine.init_interactive unless engine.instance_variable_get(:@interactive_start)
 
-      session = { channel: channel, engine: engine, thread: nil }
+      session = { channel: channel, engine: engine, thread: nil, owner_user_id: user_id }
       @mutex.synchronize { @sessions[thread_ts] = session }
     end
 
@@ -499,7 +556,7 @@ module RailsConsoleAi
       if session
         session[:channel].cancel!
         session[:channel].display("Stopped.")
-        puts "[#{channel_id}/#{thread_ts}] cancel requested"
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} cancel requested"
 
         # Record stop in conversation history so restored sessions know
         # the previous topic was abandoned by the user
@@ -513,12 +570,12 @@ module RailsConsoleAi
         end
       else
         post_message(channel: channel_id, thread_ts: thread_ts, text: "No active session to stop.")
-        puts "[#{channel_id}/#{thread_ts}] cancel: no session"
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} cancel: no session"
       end
       @mutex.synchronize { @sessions.delete(thread_ts) }
     end
 
-    def handle_bang_command(session, channel_id, thread_ts, text, user_name)
+    def handle_bang_command(session, channel_id, thread_ts, text, user_name, user_id)
       parts = text.sub(/\A!/, '').split(/\s+/, 2)
       cmd = parts[0].to_s.downcase
       arg = parts[1].to_s.strip
@@ -528,7 +585,7 @@ module RailsConsoleAi
       unless session
         if cmd == 'name' && !arg.empty?
           # Start a session so we can name it
-          start_direct_session(channel_id, thread_ts, user_name)
+          start_direct_session(channel_id, thread_ts, user_name, user_id)
           session = @mutex.synchronize { @sessions[thread_ts] }
         else
           post_message(channel: channel_id, thread_ts: thread_ts,
@@ -707,18 +764,18 @@ module RailsConsoleAi
     def clear_bot_messages(channel_id, thread_ts)
       result = slack_get("conversations.replies", channel: channel_id, ts: thread_ts, limit: 200)
       unless result["ok"]
-        puts "[#{channel_id}/#{thread_ts}] clear: failed to fetch replies: #{result["error"]}"
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} clear: failed to fetch replies: #{result["error"]}"
         return
       end
 
       bot_messages = (result["messages"] || []).select { |m| m["user"] == @bot_user_id }
       bot_messages.each do |m|
-        puts "[#{channel_id}/#{thread_ts}] clearing #{channel_id.length} / #{m["ts"]}"
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} clearing #{channel_id.length} / #{m["ts"]}"
         slack_api("chat.delete", channel: channel_id, ts: m["ts"])
       end
-      puts "[#{channel_id}/#{thread_ts}] cleared #{bot_messages.length} bot messages"
+      puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} cleared #{bot_messages.length} bot messages"
     rescue => e
-      puts "[#{channel_id}/#{thread_ts}] clear failed: #{e.message}"
+      puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} clear failed: #{e.message}"
     end
 
     def slack_get(method, **params)
@@ -801,6 +858,102 @@ module RailsConsoleAi
     rescue => e
       RailsConsoleAi.logger.warn("Failed to resolve user name for #{user_id}: #{e.message}")
       @user_cache[user_id] = user_id
+    end
+
+    def resolve_channel_name(channel_id)
+      return @channel_cache[channel_id] if @channel_cache.key?(channel_id)
+
+      result = slack_get("conversations.info", channel: channel_id)
+      if result["ok"]
+        name = result.dig("channel", "name")
+        @channel_cache[channel_id] = name
+      else
+        puts "WARNING: conversations.info failed for #{channel_id}: #{result["error"]} — add channels:read scope to your Slack app for channel names in logs"
+        @channel_cache[channel_id] = nil
+      end
+    rescue => e
+      RailsConsoleAi.logger.warn("Failed to resolve channel name for #{channel_id}: #{e.message}")
+      @channel_cache[channel_id] = nil
+    end
+
+    def channel_log_tag(channel_id)
+      name = resolve_channel_name(channel_id)
+      name ? " (#{name})" : ""
+    end
+
+    # --- @mention helpers ---
+
+    def mentions_bot?(raw_text)
+      raw_text&.include?("<@#{@bot_user_id}>")
+    end
+
+    def strip_bot_mention(text)
+      text.gsub(/<@#{@bot_user_id}>\s*/, '')
+    end
+
+    # Dedup: returns true if this ts was already processed (within 60s window)
+    def dedup_event?(ts)
+      now = Time.now
+      @mutex.synchronize do
+        @processed_ts.delete_if { |_, t| now - t > 60 }
+        if @processed_ts.key?(ts)
+          true
+        else
+          @processed_ts[ts] = now
+          false
+        end
+      end
+    end
+
+    # Fetch raw messages from a thread. Returns an array of Slack message hashes.
+    def fetch_thread_messages(channel_id, thread_ts, since_ts: nil, exclude_ts: nil)
+      params = { channel: channel_id, ts: thread_ts, limit: 200 }
+      params[:oldest] = since_ts if since_ts
+      result = slack_get("conversations.replies", **params)
+      return [] unless result["ok"]
+
+      messages = result["messages"] || []
+      messages = messages.reject { |m| m["ts"] == exclude_ts }
+      messages
+    rescue => e
+      RailsConsoleAi.logger.warn("SlackBot: failed to fetch thread messages: #{e.message}")
+      []
+    end
+
+    # Log thread messages to stdout.
+    def log_thread_messages(messages, channel_id, thread_ts)
+      return if messages.empty?
+      tag = channel_log_tag(channel_id)
+      messages.each do |m|
+        name = m["user"] ? resolve_user_name(m["user"]) : (m["username"] || "bot")
+        text = unescape_slack(m["text"] || "")
+        text = strip_bot_mention(text).strip
+        next if text.empty?
+        puts "[#{channel_id}/#{thread_ts}]#{tag} (thread) @#{name}: #{text}"
+      end
+    end
+
+    # Build a context string from thread messages to prepend to the user's first message.
+    # Returns a formatted string, or nil if no messages.
+    def build_thread_context(messages)
+      return nil if messages.empty?
+
+      lines = messages.filter_map do |m|
+        text = unescape_slack(m["text"] || "")
+        text = strip_bot_mention(text).strip
+        next if text.empty?
+        name = if m["user"]
+                 resolve_user_name(m["user"])
+               else
+                 m["username"] || "bot"
+               end
+        "@#{name}: #{text}"
+      end
+      return nil if lines.empty?
+
+      "[You were tagged in an ongoing Slack thread. Here is the conversation so far:]\n\n" \
+        "#{lines.join("\n")}\n\n" \
+        "[End of thread context]"
     end
 
     def log_startup

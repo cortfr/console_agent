@@ -13,6 +13,7 @@
       <tr>
         <th>Time</th>
         <th>User</th>
+        <th>Channel</th>
         <th>Name</th>
         <th style="max-width: 400px;">Query</th>
         <th>Mode</th>
@@ -26,6 +27,7 @@
         <tr>
           <td class="mono"><%= session.created_at.strftime('%Y-%m-%d %H:%M') %></td>
           <td><%= session.user_name %></td>
+          <td><%= session.try(:slack_channel_name).presence || '-' %></td>
           <td><%= session.name.present? ? session.name : '-' %></td>
           <td class="query-cell"><a href="<%= rails_console_ai.session_path(session) %>" title="<%= h session.query.truncate(200) %>"><%= truncate(session.query.gsub(/\s+/, ' ').strip, length: 80) %></a></td>
           <td><span class="badge badge-<%= session.mode %>"><%= session.mode %></span></td>

@@ -110,6 +110,7 @@ module RailsConsoleAi
           t.string  :model,         limit: 100
           t.string  :name,          limit: 255
           t.string  :slack_thread_ts, limit: 255
+          t.string  :slack_channel_name, limit: 255
           t.integer :duration_ms
           t.datetime :created_at,   null: false
         end
@@ -148,6 +149,11 @@ module RailsConsoleAi
         conn.add_column(table, :slack_thread_ts, :string, limit: 255)
         conn.add_index(table, :slack_thread_ts) unless conn.index_exists?(table, :slack_thread_ts)
         migrations << 'slack_thread_ts'
+      end
+
+      unless conn.column_exists?(table, :slack_channel_name)
+        conn.add_column(table, :slack_channel_name, :string, limit: 255)
+        migrations << 'slack_channel_name'
       end
 
       if migrations.empty?

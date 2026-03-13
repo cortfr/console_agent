@@ -364,11 +364,14 @@ Run RailsConsoleAi as a Slack bot. Each Slack thread becomes an independent AI s
 3. **Bot Token Scopes** — OAuth & Permissions → Bot Token Scopes, add:
    - `chat:write`
    - `channels:history` (public channels)
+   - `channels:read` (channel names in logs, optional)
    - `groups:history` (private channels, optional)
+   - `groups:read` (private channel names in logs, optional)
    - `im:history` (direct messages)
    - `users:read`
 
 4. **Event Subscriptions** — Event Subscriptions → toggle ON, then under "Subscribe to bot events" add:
+   - `app_mention` (respond when @mentioned in any channel)
    - `message.channels` (public channels)
    - `message.groups` (private channels, optional)
    - `message.im` (direct messages)
@@ -400,7 +403,12 @@ end
 bundle exec rake rails_console_ai:slack
 ```
 
-This starts a long-running process (run it separately from your web server). Each new message creates a session; threaded replies continue the conversation. The bot auto-executes code with safety guards always enabled — there is no `/danger` equivalent in Slack.
+This starts a long-running process (run it separately from your web server). The bot auto-executes code with safety guards always enabled — there is no `/danger` equivalent in Slack.
+
+**@mention behavior:**
+- **DMs** — the bot responds to all messages, no @mention needed.
+- **Channels** — the bot only responds when @mentioned. @mention it in any channel message or thread to start a session. The person who first @mentions the bot owns the session — only they can continue the conversation, and they must @mention the bot on each message. Exception: when the bot asks a question, the owner can reply without @mentioning.
+- **Joining threads** — when @mentioned mid-thread, the bot reads the thread history for context so it understands what's already been discussed.
 
 ## Requirements
 

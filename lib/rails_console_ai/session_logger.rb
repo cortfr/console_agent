@@ -24,6 +24,7 @@ module RailsConsoleAi
           created_at:    Time.respond_to?(:current) ? Time.current : Time.now
         }
         create_attrs[:slack_thread_ts] = attrs[:slack_thread_ts] if attrs[:slack_thread_ts]
+        create_attrs[:slack_channel_name] = attrs[:slack_channel_name] if attrs[:slack_channel_name]
         record = session_class.create!(create_attrs)
         record.id
       rescue => e

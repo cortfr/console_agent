@@ -7,10 +7,11 @@ module RailsConsoleAi
     LARGE_OUTPUT_THRESHOLD = 10_000      # chars — truncate tool results larger than this immediately
     LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
 
-    def initialize(binding_context:, channel:, slack_thread_ts: nil)
+    def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
       @channel = channel
       @slack_thread_ts = slack_thread_ts
+      @slack_channel_name = slack_channel_name
       @executor = Executor.new(binding_context, channel: channel)
       @provider = nil
       @context_builder = nil
@@ -542,6 +543,7 @@ module RailsConsoleAi
           name:  @session_name
         )
         log_attrs[:slack_thread_ts] = @slack_thread_ts if @slack_thread_ts
+        log_attrs[:slack_channel_name] = @slack_channel_name if @slack_channel_name
         log_attrs[:model] = effective_model
         if @channel.user_identity
           log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
@@ -579,6 +581,7 @@ module RailsConsoleAi
           start_time: @interactive_start
         }
         log_attrs[:slack_thread_ts] = @slack_thread_ts if @slack_thread_ts
+        log_attrs[:slack_channel_name] = @slack_channel_name if @slack_channel_name
         if @channel.user_identity
           log_attrs[:user_name] = @channel.mode == 'slack' ? "slack:#{@channel.user_identity}" : @channel.user_identity
         end

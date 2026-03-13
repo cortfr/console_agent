@@ -30,6 +30,12 @@
       <label>User</label>
       <span><%= @session.user_name || '-' %></span>
     </div>
+    <% if @session.try(:slack_channel_name).present? %>
+      <div class="meta-item">
+        <label>Channel</label>
+        <span><%= @session.slack_channel_name %></span>
+      </div>
+    <% end %>
     <div class="meta-item">
       <label>Provider / Model</label>
       <span><%= @session.provider %> / <%= @session.model %></span>
