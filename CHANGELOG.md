@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.0]
+
+- Fix blank content block handling in Bedrock provider
+- Fix `recall_output` to expand in place and restore preview after LLM responds, preventing context bloat
+- Remove safety guard bypass from prompt
+- Fix issue where LLM couldn't recall multiple outputs at once
+
 ## [0.21.0]
 
 - Add Slack @mention support and channel name tracking
