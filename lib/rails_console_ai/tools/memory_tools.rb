@@ -50,6 +50,20 @@ module RailsConsoleAi
         "FAILED to delete memory (#{e.message})."
       end
 
+      def recall_memory(name:)
+        key = memory_key(name)
+        memory = load_memory(key)
+        # Fall back to case-insensitive name search
+        unless memory
+          memory = load_all_memories.find { |m| m['name'].to_s.downcase == name.downcase }
+        end
+        return "No memory found: \"#{name}\"" unless memory
+
+        line = "**#{memory['name']}**\n#{memory['description']}"
+        line += "\nTags: #{memory['tags'].join(', ')}" if memory['tags'] && !memory['tags'].empty?
+        line
+      end
+
       def recall_memories(query: nil, tag: nil)
         memories = load_all_memories
         return "No memories stored yet." if memories.empty?

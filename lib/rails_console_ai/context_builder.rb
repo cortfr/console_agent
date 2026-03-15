@@ -66,7 +66,10 @@ module RailsConsoleAi
         - save_memory: persist facts or procedures you learn about this codebase.
           If a memory with the same name already exists, it will be updated in place.
         - delete_memory: remove a memory by name
-        - recall_memories: search your saved memories for details
+        - recall_memory: retrieve a specific memory by name. Use when you see a relevant memory
+          in the Memories section and want its full details.
+        - recall_memories: search memories by keyword or tag. Use when you're not sure which
+          memory you need.
 
         IMPORTANT: Check the Memories section below BEFORE answering. If a memory is relevant,
         use recall_memories to get full details and apply that knowledge to your answer.
@@ -179,7 +182,7 @@ module RailsConsoleAi
       lines = ["## Memories"]
       lines.concat(summaries)
       lines << ""
-      lines << "Call recall_memories to get details before answering. Do NOT guess from the name alone."
+      lines << "Call recall_memory (by name) or recall_memories (by keyword) to get details before answering. Do NOT guess from the name alone."
       lines.join("\n")
     rescue => e
       RailsConsoleAi.logger.debug("RailsConsoleAi: memory context failed: #{e.message}")

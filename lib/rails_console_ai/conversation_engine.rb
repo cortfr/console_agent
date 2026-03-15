@@ -878,7 +878,7 @@ module RailsConsoleAi
           elsif full_text.length > 200
             tool_msg[:output_id] = @executor.store_output(full_text)
           end
-          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memories'
+          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memory' || tc[:name] == 'recall_memories'
           messages << tool_msg
           new_messages << tool_msg
         end
@@ -990,6 +990,7 @@ module RailsConsoleAi
       when 'list_files'      then args['directory'] ? "(\"#{args['directory']}\")" : ''
       when 'save_memory'     then "(\"#{args['name']}\")"
       when 'delete_memory'   then "(\"#{args['name']}\")"
+      when 'recall_memory'   then "(\"#{args['name']}\")"
       when 'recall_memories' then args['query'] ? "(\"#{args['query']}\")" : ''
       when 'activate_skill' then "(\"#{args['name']}\")"
       when 'save_skill'     then "(\"#{args['name']}\")"
@@ -1041,8 +1042,16 @@ module RailsConsoleAi
         (result.start_with?('Skill created') || result.start_with?('Skill updated')) ? result : truncate(result, 80)
       when 'delete_skill'
         result.start_with?('Skill deleted') ? result : truncate(result, 80)
+      when 'recall_memory'
+        if result.start_with?('No memory found')
+          result
+        else
+          name = result[/\A\*\*(.+?)\*\*/, 1]
+          name ? "loaded: #{name}" : truncate(result, 80)
+        end
       when 'recall_memories'
-        names = result.scan(/\*\*(.+?)\*\*/).flatten
+        chunks = result.split("\n\n---\n\n")
+        names = chunks.map { |c| c[/\A\*\*(.+?)\*\*/, 1] }.compact
         if names.length > 1
           "#{names.length} memories found: #{names.join(', ')}"
         elsif names.length == 1

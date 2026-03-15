@@ -591,6 +591,25 @@ RSpec.describe RailsConsoleAi::Repl do
       expect(trimmed[1][:content]).to eq("hi")
     end
 
+    it 'does not trim recall_memory results (memory_recall flag)' do
+      history = []
+      # recall_memory result (should be preserved)
+      history << { role: 'tool', content: "**Sharding**\nFull sharding details...", output_id: 1, memory_recall: true }
+      history << { role: 'assistant', content: "Based on sharding..." }
+      # 3 more regular outputs (pushes past RECENT_OUTPUTS_TO_KEEP)
+      3.times do |i|
+        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 10 }
+        history << { role: :assistant, content: "Response #{i}" }
+      end
+
+      trimmed = repl.send(:trim_old_outputs, history)
+
+      # Memory recall should still have its full content
+      memory_msg = trimmed.find { |m| m[:memory_recall] }
+      expect(memory_msg[:content]).to include('Full sharding details')
+      expect(memory_msg[:content]).not_to include('[Output omitted')
+    end
+
     it 'does not trim messages flagged as memory_recall' do
       history = []
       # Memory recall result (should be preserved)

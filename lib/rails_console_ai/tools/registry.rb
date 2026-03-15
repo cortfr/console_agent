@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan activate_skill save_skill delete_skill].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory recall_memory execute_code execute_plan activate_skill save_skill delete_skill].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil)
         @executor = executor
@@ -268,6 +268,19 @@ module RailsConsoleAi
             'required' => ['name']
           },
           handler: ->(args) { memory.delete_memory(name: args['name']) }
+        )
+
+        register(
+          name: 'recall_memory',
+          description: 'Retrieve a specific memory by name. Use this when you know which memory you need (e.g. from the Memories list in the system prompt). For searching across memories, use recall_memories instead.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The exact memory name (e.g. "Sharding architecture")' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { memory.recall_memory(name: args['name']) }
         )
 
         register(

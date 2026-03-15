@@ -99,6 +99,30 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
     end
   end
 
+  describe '#recall_memory' do
+    before do
+      tools.save_memory(name: 'Sharding architecture', description: 'Uses separate databases per shard', tags: ['database'])
+    end
+
+    it 'returns the full memory by exact name' do
+      result = tools.recall_memory(name: 'Sharding architecture')
+      expect(result).to include('**Sharding architecture**')
+      expect(result).to include('Uses separate databases per shard')
+      expect(result).to include('Tags: database')
+    end
+
+    it 'is case-insensitive' do
+      result = tools.recall_memory(name: 'sharding architecture')
+      expect(result).to include('**Sharding architecture**')
+      expect(result).to include('Uses separate databases per shard')
+    end
+
+    it 'returns error for unknown name' do
+      result = tools.recall_memory(name: 'nonexistent')
+      expect(result).to eq('No memory found: "nonexistent"')
+    end
+  end
+
   describe '#recall_memories' do
     before do
       tools.save_memory(name: 'Sharding', description: 'Uses separate databases', tags: ['database'])
