@@ -61,11 +61,14 @@ module RailsConsoleAi
           }
         end
         if query && !query.empty?
-          q = query.downcase
+          words = query.downcase.split(/\s+/)
           results = results.select { |m|
-            m['name'].to_s.downcase.include?(q) ||
-            m['description'].to_s.downcase.include?(q) ||
-            Array(m['tags']).any? { |t| t.downcase.include?(q) }
+            searchable = [
+              m['name'].to_s.downcase,
+              m['description'].to_s.downcase,
+              Array(m['tags']).map(&:downcase).join(' ')
+            ].join(' ')
+            words.all? { |w| searchable.include?(w) }
           }
         end
 
@@ -75,7 +78,7 @@ module RailsConsoleAi
           line = "**#{m['name']}**\n#{m['description']}"
           line += "\nTags: #{m['tags'].join(', ')}" if m['tags'] && !m['tags'].empty?
           line
-        }.join("\n\n")
+        }.join("\n\n---\n\n")
       end
 
       def memory_summaries

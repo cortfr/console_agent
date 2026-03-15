@@ -132,6 +132,36 @@ RSpec.describe RailsConsoleAi::Tools::MemoryTools do
       result = tools.recall_memories(query: 'nonexistent')
       expect(result).to eq('No memories matching your search.')
     end
+
+    it 'separates multiple memories with --- delimiter' do
+      result = tools.recall_memories
+      expect(result).to include("\n\n---\n\n")
+      chunks = result.split("\n\n---\n\n")
+      expect(chunks.length).to eq(2)
+    end
+
+    it 'matches all query words (AND logic)' do
+      tools.save_memory(name: 'Sharding architecture', description: 'How the DB is sharded', tags: ['database', 'architecture'])
+      result = tools.recall_memories(query: 'sharding architecture')
+      expect(result).to include('Sharding architecture')
+      # Should NOT match plain "Sharding" (no "architecture" in its name/desc/tags)
+      chunks = result.split("\n\n---\n\n")
+      sharding_only = chunks.select { |c| c.include?('**Sharding**') }
+      expect(sharding_only).to be_empty
+    end
+
+    it 'matches single-word queries' do
+      result = tools.recall_memories(query: 'devise')
+      expect(result).to include('Auth')
+      expect(result).not_to include('Sharding')
+    end
+
+    it 'matches words across name, description, and tags combined' do
+      tools.save_memory(name: 'Redis cache', description: 'Ephemeral storage system', tags: ['sharding'])
+      # "redis sharding" — "redis" is in name, "sharding" is in tags
+      result = tools.recall_memories(query: 'redis sharding')
+      expect(result).to include('Redis cache')
+    end
   end
 
   describe '#memory_summaries' do

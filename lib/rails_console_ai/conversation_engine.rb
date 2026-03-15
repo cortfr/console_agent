@@ -878,6 +878,7 @@ module RailsConsoleAi
           elsif full_text.length > 200
             tool_msg[:output_id] = @executor.store_output(full_text)
           end
+          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memories'
           messages << tool_msg
           new_messages << tool_msg
         end
@@ -1041,8 +1042,14 @@ module RailsConsoleAi
       when 'delete_skill'
         result.start_with?('Skill deleted') ? result : truncate(result, 80)
       when 'recall_memories'
-        chunks = result.split("\n\n")
-        chunks.length > 1 ? "#{chunks.length} memories found" : truncate(result, 80)
+        names = result.scan(/\*\*(.+?)\*\*/).flatten
+        if names.length > 1
+          "#{names.length} memories found: #{names.join(', ')}"
+        elsif names.length == 1
+          "1 memory found: #{names.first}"
+        else
+          truncate(result, 80)
+        end
       when 'execute_plan'
         steps_done = result.scan(/^Step \d+/).length
         steps_done > 0 ? "#{steps_done} steps executed" : truncate(result, 80)
@@ -1158,7 +1165,7 @@ module RailsConsoleAi
 
     def trim_old_outputs(messages)
       output_indices = messages.each_with_index
-                               .select { |m, _| m[:output_id] }
+                               .select { |m, _| m[:output_id] && !m[:memory_recall] }
                                .map { |_, i| i }
 
       return messages if output_indices.length <= RECENT_OUTPUTS_TO_KEEP
