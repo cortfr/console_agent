@@ -32,7 +32,56 @@ module RailsConsoleAi
       skills.find { |s| s['name'].to_s.downcase == name.to_s.downcase }
     end
 
+    def save_skill(name:, description:, body:, tags: [], bypass_guards_for_methods: [])
+      key = skill_key(name)
+      existing = find_skill(name)
+
+      frontmatter = {
+        'name' => name,
+        'description' => description,
+        'tags' => Array(tags)
+      }
+      bypasses = Array(bypass_guards_for_methods)
+      frontmatter['bypass_guards_for_methods'] = bypasses unless bypasses.empty?
+
+      content = "---\n#{YAML.dump(frontmatter).sub("---\n", '').strip}\n---\n\n#{body}\n"
+      @storage.write(key, content)
+
+      path = @storage.respond_to?(:root_path) ? File.join(@storage.root_path, key) : key
+      if existing
+        "Skill updated: \"#{name}\" (#{path})"
+      else
+        "Skill created: \"#{name}\" (#{path})"
+      end
+    rescue Storage::StorageError => e
+      "FAILED to save skill (#{e.message})."
+    end
+
+    def delete_skill(name:)
+      key = skill_key(name)
+      unless @storage.exists?(key)
+        found = load_all_skills.find { |s| s['name'].to_s.downcase == name.to_s.downcase }
+        return "No skill found: \"#{name}\"" unless found
+        key = skill_key(found['name'])
+      end
+
+      skill = load_skill(key)
+      @storage.delete(key)
+      "Skill deleted: \"#{skill ? skill['name'] : name}\""
+    rescue Storage::StorageError => e
+      "FAILED to delete skill (#{e.message})."
+    end
+
     private
+
+    def skill_key(name)
+      slug = name.downcase.strip
+        .gsub(/[^a-z0-9\s-]/, '')
+        .gsub(/[\s]+/, '-')
+        .gsub(/-+/, '-')
+        .sub(/^-/, '').sub(/-$/, '')
+      "#{SKILLS_DIR}/#{slug}.md"
+    end
 
     def load_skill(key)
       content = @storage.read(key)

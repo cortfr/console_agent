@@ -991,6 +991,8 @@ module RailsConsoleAi
       when 'delete_memory'   then "(\"#{args['name']}\")"
       when 'recall_memories' then args['query'] ? "(\"#{args['query']}\")" : ''
       when 'activate_skill' then "(\"#{args['name']}\")"
+      when 'save_skill'     then "(\"#{args['name']}\")"
+      when 'delete_skill'   then "(\"#{args['name']}\")"
       when 'recall_output'   then "(#{args['id']})"
       when 'execute_plan'
         steps = args['steps']
@@ -1034,6 +1036,10 @@ module RailsConsoleAi
         (result.start_with?('Memory saved') || result.start_with?('Memory updated')) ? result : truncate(result, 80)
       when 'delete_memory'
         result.start_with?('Memory deleted') ? result : truncate(result, 80)
+      when 'save_skill'
+        (result.start_with?('Skill created') || result.start_with?('Skill updated')) ? result : truncate(result, 80)
+      when 'delete_skill'
+        result.start_with?('Skill deleted') ? result : truncate(result, 80)
       when 'recall_memories'
         chunks = result.split("\n\n")
         chunks.length > 1 ? "#{chunks.length} memories found" : truncate(result, 80)

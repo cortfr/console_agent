@@ -6,7 +6,7 @@ module RailsConsoleAi
       attr_reader :definitions
 
       # Tools that should never be cached (side effects or user interaction)
-      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan activate_skill].freeze
+      NO_CACHE = %w[ask_user save_memory delete_memory execute_code execute_plan activate_skill save_skill delete_skill].freeze
 
       def initialize(executor: nil, mode: :default, channel: nil)
         @executor = executor
@@ -311,6 +311,44 @@ module RailsConsoleAi
 
             skill['body']
           }
+        )
+
+        register(
+          name: 'save_skill',
+          description: 'Create or update a skill — a reusable procedure for a specific operation. Use when the user asks you to create a skill, recipe, or runbook. Skills differ from memories: a skill is a step-by-step procedure to follow, while a memory is a fact or pattern you learned.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'Skill name (e.g. "Resurrect deleted BookingPage")' },
+              'description' => { 'type' => 'string', 'description' => 'One-line description of when to use this skill' },
+              'body' => { 'type' => 'string', 'description' => 'The full skill recipe in markdown. Include: ## When to use, ## Recipe (numbered steps with code blocks), ## Notes (optional).' },
+              'tags' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Optional tags for categorization (e.g. ["booking-page", "admin"])' },
+              'bypass_guards_for_methods' => { 'type' => 'array', 'items' => { 'type' => 'string' }, 'description' => 'Methods that should bypass safety guards when this skill is active (e.g. ["BookingPage#save!", "BookingPage#ensure_subdomain_set!"])' }
+            },
+            'required' => %w[name description body]
+          },
+          handler: ->(args) {
+            loader.save_skill(
+              name: args['name'],
+              description: args['description'],
+              body: args['body'],
+              tags: args['tags'] || [],
+              bypass_guards_for_methods: args['bypass_guards_for_methods'] || []
+            )
+          }
+        )
+
+        register(
+          name: 'delete_skill',
+          description: 'Delete a skill by name.',
+          parameters: {
+            'type' => 'object',
+            'properties' => {
+              'name' => { 'type' => 'string', 'description' => 'The skill name to delete' }
+            },
+            'required' => ['name']
+          },
+          handler: ->(args) { loader.delete_skill(name: args['name']) }
         )
       end
 

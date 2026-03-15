@@ -99,4 +99,67 @@ RSpec.describe RailsConsoleAi::SkillLoader do
       expect(loader.find_skill('nonexistent')).to be_nil
     end
   end
+
+  describe '#save_skill' do
+    it 'creates a new skill file' do
+      result = loader.save_skill(
+        name: 'Resurrect BookingPage',
+        description: 'Undelete a deleted booking page and restore its subdomain',
+        body: "## When to use\nUse when a booking page needs to be undeleted.\n\n## Recipe\n1. Find the booking page\n2. Set deleted = false\n3. Call ensure_subdomain_set!",
+        tags: ['booking-page', 'admin']
+      )
+
+      expect(result).to start_with('Skill created:')
+      skill = loader.find_skill('Resurrect BookingPage')
+      expect(skill).not_to be_nil
+      expect(skill['name']).to eq('Resurrect BookingPage')
+      expect(skill['description']).to eq('Undelete a deleted booking page and restore its subdomain')
+      expect(skill['tags']).to eq(['booking-page', 'admin'])
+      expect(skill['body']).to include('ensure_subdomain_set!')
+    end
+
+    it 'updates an existing skill' do
+      loader.save_skill(name: 'Test Skill', description: 'v1', body: 'original body', tags: ['test'])
+      result = loader.save_skill(name: 'Test Skill', description: 'v2', body: 'updated body', tags: ['test'])
+
+      expect(result).to start_with('Skill updated:')
+      skill = loader.find_skill('Test Skill')
+      expect(skill['description']).to eq('v2')
+      expect(skill['body']).to eq('updated body')
+    end
+
+    it 'includes bypass_guards_for_methods when provided' do
+      loader.save_skill(
+        name: 'Guard Skill',
+        description: 'test',
+        body: 'test body',
+        bypass_guards_for_methods: ['BookingPage#save!']
+      )
+
+      skill = loader.find_skill('Guard Skill')
+      expect(skill['bypass_guards_for_methods']).to eq(['BookingPage#save!'])
+    end
+
+    it 'omits bypass_guards_for_methods when empty' do
+      loader.save_skill(name: 'No Guards', description: 'test', body: 'test body')
+
+      content = storage.read('skills/no-guards.md')
+      expect(content).not_to include('bypass_guards_for_methods')
+    end
+  end
+
+  describe '#delete_skill' do
+    it 'deletes an existing skill' do
+      loader.save_skill(name: 'To Delete', description: 'test', body: 'test body')
+      result = loader.delete_skill(name: 'To Delete')
+
+      expect(result).to start_with('Skill deleted:')
+      expect(loader.find_skill('To Delete')).to be_nil
+    end
+
+    it 'returns error for nonexistent skill' do
+      result = loader.delete_skill(name: 'Nonexistent')
+      expect(result).to include('No skill found')
+    end
+  end
 end

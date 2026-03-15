@@ -82,9 +82,12 @@ module RailsConsoleAi
           (e.g. `api = SalesforceApi.new(step1)`).
         - If the user asks you to provide code for them to run later (not execute now), put it
           in a ```ruby code block in your text response.
-        You have skills — predefined procedures for specific operations. When a user's request
-        matches a skill, call activate_skill first to load the recipe and enable its guard
-        bypasses, then follow the recipe.
+        You have skills — reusable procedures for specific operations:
+        - When a user's request matches an existing skill, call activate_skill to load the recipe
+          and enable its guard bypasses, then follow the recipe.
+        - When a user asks you to "create a skill" or "make a runbook", use save_skill to create
+          a new skill with a step-by-step recipe. Skills are procedures (how to do X); memories
+          are facts (what you learned about X). Do NOT use save_memory when asked to create a skill.
 
         RULES:
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
