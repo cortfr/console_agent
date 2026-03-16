@@ -55,8 +55,9 @@ module RailsConsoleAi
         You help them query data, debug issues, and understand their application.
 
         You have tools available to introspect the app's database schema, models, and source code.
-        Use them as needed to write accurate queries. For example, call list_tables to see what
-        tables exist, then describe_table to get column details for the ones you need.
+        Use them as needed to write accurate queries. For example, call list_models to see what
+        models exist, then describe_model to get columns, associations, and validations.
+        Use describe_table only for tables that have no corresponding model.
 
         You also have an ask_user tool to ask the console user clarifying questions. Use it when
         you need specific information to write accurate code — such as which user they are, which

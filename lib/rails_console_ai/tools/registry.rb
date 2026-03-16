@@ -111,7 +111,7 @@ module RailsConsoleAi
 
         register(
           name: 'describe_table',
-          description: 'Get column names and types for a specific database table.',
+          description: 'Get column names, types, and indexes for a database table. Use this only for tables that have no corresponding ActiveRecord model — for tables with models, use describe_model instead (it includes columns).',
           parameters: {
             'type' => 'object',
             'properties' => {
@@ -131,7 +131,7 @@ module RailsConsoleAi
 
         register(
           name: 'describe_model',
-          description: 'Get detailed info about a specific model: associations, validations, table name.',
+          description: 'Get full details about a model: columns, indexes, associations, validations, and scopes. This is the primary tool for understanding a model — it includes the table schema.',
           parameters: {
             'type' => 'object',
             'properties' => {

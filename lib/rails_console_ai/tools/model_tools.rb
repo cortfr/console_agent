@@ -35,6 +35,34 @@ module RailsConsoleAi
         result = "Model: #{model.name}\n"
         result += "Table: #{model.table_name}\n"
 
+        # Columns and indexes from the database table
+        begin
+          if ActiveRecord::Base.connected?
+            conn = ActiveRecord::Base.connection
+            if conn.tables.include?(model.table_name)
+              cols = conn.columns(model.table_name).map do |c|
+                parts = ["#{c.name}:#{c.type}"]
+                parts << "nullable" if c.null
+                parts << "default=#{c.default}" unless c.default.nil?
+                parts.join(" ")
+              end
+              result += "Columns:\n"
+              cols.each { |c| result += "  #{c}\n" }
+
+              indexes = conn.indexes(model.table_name).map do |idx|
+                unique = idx.unique ? "UNIQUE " : ""
+                "#{unique}INDEX on (#{idx.columns.join(', ')})"
+              end
+              unless indexes.empty?
+                result += "Indexes:\n"
+                indexes.each { |i| result += "  #{i}\n" }
+              end
+            end
+          end
+        rescue => e
+          # table introspection may fail
+        end
+
         assocs = model.reflect_on_all_associations.map { |a| "#{a.macro} :#{a.name}" }
         unless assocs.empty?
           result += "Associations:\n"

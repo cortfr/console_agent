@@ -714,8 +714,8 @@ module RailsConsoleAi
 
         EXPLORATION STRATEGY — be efficient to avoid timeouts:
         1. Start with list_models to see all models and their associations
-        2. Pick the 5-8 CORE models and call describe_model on those only
-        3. Call describe_table on only 3-5 key tables (skip tables whose models already told you enough)
+        2. Pick the 5-8 CORE models and call describe_model on those only (it includes columns, indexes, associations, validations)
+        3. Call describe_table only for tables that have NO corresponding model (join tables, legacy tables, etc.)
         4. Use search_code sparingly — only for specific patterns you suspect (sharding, STI, concerns)
         5. Use read_file only when you need to understand a specific pattern (read small sections, not whole files)
         6. Do NOT exhaustively describe every table or model — focus on what's important
@@ -882,7 +882,8 @@ module RailsConsoleAi
           elsif full_text.length > 200
             tool_msg[:output_id] = @executor.store_output(full_text)
           end
-          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memory' || tc[:name] == 'recall_memories' || tc[:name] == 'activate_skill'
+          tool_msg[:memory_recall] = true if %w[recall_memory recall_memories activate_skill
+                                                describe_model describe_table list_models list_tables].include?(tc[:name])
           messages << tool_msg
           new_messages << tool_msg
         end
@@ -1021,8 +1022,10 @@ module RailsConsoleAi
         "#{result.scan(/^\s{2}\S/).length} columns"
       when 'describe_model'
         parts = []
+        col_count = result.scan(/^\s{2}\S+:\S+/).length
         assoc_count = result.scan(/^\s{2}(has_many|has_one|belongs_to|has_and_belongs_to_many)/).length
         val_count = result.scan(/^\s{2}(presence|uniqueness|format|length|numericality|inclusion|exclusion|confirmation|acceptance)/).length
+        parts << "#{col_count} columns" if col_count > 0
         parts << "#{assoc_count} associations" if assoc_count > 0
         parts << "#{val_count} validations" if val_count > 0
         parts.empty? ? truncate(result, 80) : parts.join(', ')
