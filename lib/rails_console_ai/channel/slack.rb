@@ -65,7 +65,8 @@ module RailsConsoleAi
         # Don't post raw code/plan steps to Slack — non-technical users don't need to see Ruby
         # But do log to STDOUT so server logs show what was generated/executed
         @output_log.write("# Generated code:\n#{code}\n")
-        STDOUT.puts "#{@log_prefix} (code)\n# Generated code:\n#{code}"
+        STDOUT.puts "#{@log_prefix} (code)"
+        code.each_line { |line| STDOUT.puts "#{@log_prefix} (code) #{line.rstrip}" }
       end
 
       def display_result_output(output)
