@@ -882,7 +882,7 @@ module RailsConsoleAi
           elsif full_text.length > 200
             tool_msg[:output_id] = @executor.store_output(full_text)
           end
-          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memory' || tc[:name] == 'recall_memories'
+          tool_msg[:memory_recall] = true if tc[:name] == 'recall_memory' || tc[:name] == 'recall_memories' || tc[:name] == 'activate_skill'
           messages << tool_msg
           new_messages << tool_msg
         end
@@ -1196,10 +1196,8 @@ module RailsConsoleAi
             next unless block.is_a?(Hash)
             if tool_result_block?(block)
               content = tool_result_content(block)
-              flags = []
-              flags << "omitted" if content.include?('Output omitted')
-              flags << "truncated" if content.include?('Output truncated')
-              flag_str = flags.any? ? " #{flags.join(', ')}" : ""
+              flags = debug_output_flags(content, msg)
+              flag_str = flags.any? ? ", #{flags.join(', ')}" : ""
               parts << "tool_result(#{content.length} chars#{flag_str})"
             elsif tool_use_block?(block)
               parts << "tool_use: #{tool_use_name(block)}"
@@ -1212,11 +1210,26 @@ module RailsConsoleAi
           text = msg[:content].to_s
           preview = text.length > 60 ? text[0, 57] + "..." : text
           preview = preview.gsub("\n", "\\n")
-          parts << "\"#{preview}\""
+          flags = debug_output_flags(text, msg)
+          flag_str = flags.any? ? " (#{flags.join(', ')})" : ""
+          parts << "\"#{preview}\" #{text.length} chars#{flag_str}"
         end
 
         $stderr.puts "#{d}[debug]     ##{i} #{role}: [#{parts.join(', ')}]#{r}"
       end
+    end
+
+    def debug_output_flags(content_text, msg)
+      flags = []
+      flags << "output ##{msg[:output_id]}" if msg[:output_id]
+      if content_text.include?('Output omitted')
+        flags << "omitted"
+      elsif (m = content_text.match(/Output truncated at (\S+) of (\S+) chars/))
+        flags << "truncated #{m[2]}→#{m[1]}"
+      elsif msg[:expanded]
+        flags << "expanded"
+      end
+      flags
     end
 
     def debug_post_call(round, result, total_input, total_output)
