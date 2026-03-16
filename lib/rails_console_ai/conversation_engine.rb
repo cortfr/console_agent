@@ -284,7 +284,11 @@ module RailsConsoleAi
       log_interactive_turn
 
       @history.concat(tool_messages) if tool_messages && !tool_messages.empty?
-      @history << { role: :assistant, content: result.text }
+      # Only add the final assistant text when the LLM gave a final response (end_turn).
+      # For tool_use results, the assistant message is already in tool_messages via
+      # format_assistant_message, so adding result.text again would duplicate it —
+      # and if the text is empty, Bedrock rejects the empty content array.
+      @history << { role: :assistant, content: result.text } unless result.tool_use?
 
       return :no_code unless code && !code.strip.empty?
       return :cancelled if @channel.cancelled?
