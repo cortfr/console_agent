@@ -1088,6 +1088,38 @@ module RailsConsoleAi
       status
     end
 
+    # Provider-agnostic block detection helpers.
+    # Anthropic uses string keys: { 'type' => 'tool_result', ... }
+    # Bedrock uses symbol keys:   { tool_result: { ... } }
+    def tool_result_block?(block)
+      return false unless block.is_a?(Hash)
+      block['type'] == 'tool_result' || block.key?(:tool_result)
+    end
+
+    def tool_use_block?(block)
+      return false unless block.is_a?(Hash)
+      block['type'] == 'tool_use' || block.key?(:tool_use)
+    end
+
+    def tool_result_content(block)
+      if block['type'] == 'tool_result'
+        block['content'].to_s
+      elsif block.key?(:tool_result)
+        content = block[:tool_result][:content]
+        content.is_a?(Array) ? content.map { |c| c[:text].to_s }.join : content.to_s
+      else
+        ''
+      end
+    end
+
+    def tool_use_name(block)
+      if block['type'] == 'tool_use'
+        block['name']
+      elsif block.key?(:tool_use)
+        block[:tool_use][:name]
+      end
+    end
+
     def debug_pre_call(round, messages, system_prompt, tools, total_input, total_output)
       d = "\e[35m"
       r = "\e[0m"
@@ -1104,13 +1136,28 @@ module RailsConsoleAi
         if role == 'tool'
           tool_result_msgs += 1
         elsif msg[:content].is_a?(Array)
+          has_tool_block = false
           msg[:content].each do |block|
             next unless block.is_a?(Hash)
-            if block['type'] == 'tool_result'
+            if tool_result_block?(block)
               tool_result_msgs += 1
-              omitted_msgs += 1 if block['content'].to_s.include?('Output omitted')
-            elsif block['type'] == 'tool_use'
+              has_tool_block = true
+              omitted_msgs += 1 if tool_result_content(block).include?('Output omitted')
+            elsif tool_use_block?(block)
               tool_use_msgs += 1
+              has_tool_block = true
+            end
+          end
+          # Array content with no tool blocks — count by role
+          unless has_tool_block
+            if role == 'user'
+              user_msgs += 1
+              if content_str.include?('Code was executed') || content_str.include?('directly executed code')
+                output_msgs += 1
+                omitted_msgs += 1 if content_str.include?('Output omitted')
+              end
+            elsif role == 'assistant'
+              assistant_msgs += 1
             end
           end
         elsif role == 'user'
@@ -1134,6 +1181,41 @@ module RailsConsoleAi
       $stderr.puts "#{d}[debug]   est. content size: #{format_tokens(total_content_chars)} chars#{r}"
       if total_input > 0 || total_output > 0
         $stderr.puts "#{d}[debug]   tokens so far: in: #{format_tokens(total_input)} | out: #{format_tokens(total_output)}#{r}"
+      end
+      debug_message_summary(messages, d, r)
+    end
+
+    def debug_message_summary(messages, d, r)
+      $stderr.puts "#{d}[debug]   conversation:#{r}"
+      messages.each_with_index do |msg, i|
+        role = msg[:role].to_s
+        parts = []
+
+        if msg[:content].is_a?(Array)
+          msg[:content].each do |block|
+            next unless block.is_a?(Hash)
+            if tool_result_block?(block)
+              content = tool_result_content(block)
+              flags = []
+              flags << "omitted" if content.include?('Output omitted')
+              flags << "truncated" if content.include?('Output truncated')
+              flag_str = flags.any? ? " #{flags.join(', ')}" : ""
+              parts << "tool_result(#{content.length} chars#{flag_str})"
+            elsif tool_use_block?(block)
+              parts << "tool_use: #{tool_use_name(block)}"
+            elsif block['type'] == 'text' || block.key?(:text)
+              text = block['text'] || block[:text]
+              parts << "text(#{text.to_s.length} chars)" if text.to_s.length > 0
+            end
+          end
+        else
+          text = msg[:content].to_s
+          preview = text.length > 60 ? text[0, 57] + "..." : text
+          preview = preview.gsub("\n", "\\n")
+          parts << "\"#{preview}\""
+        end
+
+        $stderr.puts "#{d}[debug]     ##{i} #{role}: [#{parts.join(', ')}]#{r}"
       end
     end
 
@@ -1198,8 +1280,14 @@ module RailsConsoleAi
 
       if msg[:content].is_a?(Array)
         trimmed_content = msg[:content].map do |block|
-          if block.is_a?(Hash) && block['type'] == 'tool_result'
-            block.merge('content' => ref)
+          if block.is_a?(Hash) && tool_result_block?(block)
+            if block.key?(:tool_result)
+              # Bedrock format
+              block.merge(tool_result: block[:tool_result].merge(content: [{ text: ref }]))
+            else
+              # Anthropic format
+              block.merge('content' => ref)
+            end
           else
             block
           end
@@ -1221,11 +1309,17 @@ module RailsConsoleAi
         next unless full_output
         # Save original content so re_truncate_expanded can restore it
         msg[:pre_expand_content] = msg[:content]
-        # Replace content with full output (handle Anthropic, OpenAI, and user message formats)
+        # Replace content with full output (handle Anthropic, Bedrock, and user message formats)
         if msg[:content].is_a?(Array)
           msg[:content] = msg[:content].map do |block|
-            if block.is_a?(Hash) && block['type'] == 'tool_result'
-              block.merge('content' => full_output)
+            if block.is_a?(Hash) && tool_result_block?(block)
+              if block.key?(:tool_result)
+                # Bedrock format
+                block.merge(tool_result: block[:tool_result].merge(content: [{ text: full_output }]))
+              else
+                # Anthropic format
+                block.merge('content' => full_output)
+              end
             else
               block
             end
@@ -1272,11 +1366,11 @@ module RailsConsoleAi
 
         if msg[:role].to_s == 'assistant' && msg[:content].is_a?(Array)
           msg[:content].each do |block|
-            next unless block.is_a?(Hash) && block['type'] == 'tool_use' && block['name'] == 'execute_plan'
-            input = block['input'] || {}
+            next unless block.is_a?(Hash) && tool_use_block?(block) && tool_use_name(block) == 'execute_plan'
+            input = block['input'] || block.dig(:tool_use, :input) || {}
             steps = input['steps'] || []
 
-            tool_id = block['id']
+            tool_id = block['id'] || block.dig(:tool_use, :tool_use_id)
             result_msg = find_tool_result(history, tool_id)
             next unless result_msg
 
@@ -1300,14 +1394,15 @@ module RailsConsoleAi
 
     def find_tool_result(history, tool_id)
       history.each do |msg|
+        if msg[:role].to_s == 'tool' && msg[:tool_call_id] == tool_id
+          return msg[:content]
+        end
         next unless msg[:content].is_a?(Array)
         msg[:content].each do |block|
           next unless block.is_a?(Hash)
-          if block['type'] == 'tool_result' && block['tool_use_id'] == tool_id
-            return block['content']
-          end
-          if msg[:role].to_s == 'tool' && msg[:tool_call_id] == tool_id
-            return msg[:content]
+          if tool_result_block?(block)
+            block_tool_id = block['tool_use_id'] || block.dig(:tool_result, :tool_use_id)
+            return tool_result_content(block) if block_tool_id == tool_id
           end
         end
       end
