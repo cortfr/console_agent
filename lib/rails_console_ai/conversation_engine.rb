@@ -6,6 +6,8 @@ module RailsConsoleAi
     RECENT_OUTPUTS_TO_KEEP = 2
     LARGE_OUTPUT_THRESHOLD = 10_000      # chars — truncate tool results larger than this immediately
     LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
+    LOOP_WARN_THRESHOLD = 3              # same tool+args repeated → inject warning
+    LOOP_BREAK_THRESHOLD = 5             # same tool+args repeated → break loop
 
     def initialize(binding_context:, channel:, slack_thread_ts: nil, slack_channel_name: nil)
       @binding_context = binding_context
@@ -773,6 +775,7 @@ module RailsConsoleAi
       last_tool_names = []
 
       exhausted = false
+      tool_call_counts = Hash.new(0)
 
       max_rounds.times do |round|
         if @channel.cancelled?
@@ -888,6 +891,21 @@ module RailsConsoleAi
           messages << tool_msg
           new_messages << tool_msg
         end
+
+        # Loop detection: track repeated identical tool calls
+        result.tool_calls.each do |tc|
+          key = "#{tc[:name]}:#{tc[:arguments].to_json}"
+          tool_call_counts[key] += 1
+
+          if tool_call_counts[key] >= LOOP_BREAK_THRESHOLD
+            @channel.display_dim("  Loop detected: #{tc[:name]} called #{tool_call_counts[key]} times with same args — stopping.")
+            exhausted = true
+          elsif tool_call_counts[key] >= LOOP_WARN_THRESHOLD
+            @channel.display_dim("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
+            messages << { role: :user, content: "You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now." }
+          end
+        end
+        break if exhausted
 
         # If the user declined execution, don't call the LLM again —
         # just return to the prompt so they can correct their request.

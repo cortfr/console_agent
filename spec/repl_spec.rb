@@ -799,6 +799,68 @@ RSpec.describe RailsConsoleAi::Repl do
     end
   end
 
+  describe 'loop detection' do
+    it 'injects warning when same tool call repeats LOOP_WARN_THRESHOLD times' do
+      # LLM calls list_tables repeatedly with same args
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'list_tables', arguments: {} }],
+        stop_reason: :tool_use
+      )
+      final_result = chat_result("Here are the tables.")
+
+      call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        call_count += 1
+        # Return tool calls for first 3 rounds, then final answer
+        call_count <= 3 ? tool_call_result : final_result
+      end
+      allow(mock_provider).to receive(:format_assistant_message).and_return(
+        { role: 'assistant', content: [{ 'type' => 'tool_use', 'id' => 'tc_1', 'name' => 'list_tables', 'input' => {} }] }
+      )
+      allow(mock_provider).to receive(:format_tool_result).and_return(
+        { role: 'user', content: [{ 'type' => 'tool_result', 'tool_use_id' => 'tc_1', 'content' => 'users, posts' }] }
+      )
+
+      engine = repl.instance_variable_get(:@engine)
+      _result, _msgs, _in, _out = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
+
+      # Should have called 4 times (3 tool rounds + final)
+      expect(call_count).to eq(4)
+    end
+
+    it 'breaks loop when same tool call repeats LOOP_BREAK_THRESHOLD times' do
+      # LLM calls list_tables endlessly with same args
+      tool_call_result = RailsConsoleAi::Providers::ChatResult.new(
+        text: '',
+        input_tokens: 50, output_tokens: 20,
+        tool_calls: [{ id: 'tc_1', name: 'list_tables', arguments: {} }],
+        stop_reason: :tool_use
+      )
+      final_result = chat_result("I gave up.")
+
+      call_count = 0
+      allow(mock_provider).to receive(:chat_with_tools) do
+        call_count += 1
+        tool_call_result
+      end
+      allow(mock_provider).to receive(:chat).and_return(final_result)
+      allow(mock_provider).to receive(:format_assistant_message).and_return(
+        { role: 'assistant', content: [{ 'type' => 'tool_use', 'id' => 'tc_1', 'name' => 'list_tables', 'input' => {} }] }
+      )
+      allow(mock_provider).to receive(:format_tool_result).and_return(
+        { role: 'user', content: [{ 'type' => 'tool_result', 'tool_use_id' => 'tc_1', 'content' => 'users, posts' }] }
+      )
+
+      engine = repl.instance_variable_get(:@engine)
+      _result, _msgs, _in, _out = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
+
+      # Should break at 5 (LOOP_BREAK_THRESHOLD), not run all 200 rounds
+      expect(call_count).to eq(5)
+    end
+  end
+
   describe '#resume' do
     let(:mock_session) do
       double('Session',
