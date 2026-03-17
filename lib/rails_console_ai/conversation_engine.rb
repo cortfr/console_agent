@@ -31,6 +31,7 @@ module RailsConsoleAi
       @last_interactive_executed = false
       @compact_warned = false
       @prior_duration_ms = 0
+      @expanded_output_ids = Set.new
     end
 
     # --- Public API for channels ---
@@ -1142,12 +1143,13 @@ module RailsConsoleAi
       r = "\e[0m"
 
       user_msgs = 0; assistant_msgs = 0; tool_result_msgs = 0; tool_use_msgs = 0
-      output_msgs = 0; omitted_msgs = 0
+      output_msgs = 0; omitted_msgs = 0; expanded_msgs = 0
       total_content_chars = system_prompt.to_s.length
 
       messages.each do |msg|
         content_str = msg[:content].is_a?(Array) ? msg[:content].to_s : msg[:content].to_s
         total_content_chars += content_str.length
+        is_expanded = msg[:expanded] || (msg[:output_id] && @expanded_output_ids.include?(msg[:output_id]))
 
         role = msg[:role].to_s
         if role == 'tool'
@@ -1159,7 +1161,11 @@ module RailsConsoleAi
             if tool_result_block?(block)
               tool_result_msgs += 1
               has_tool_block = true
-              omitted_msgs += 1 if tool_result_content(block).include?('Output omitted')
+              if is_expanded
+                expanded_msgs += 1
+              elsif tool_result_content(block).include?('Output omitted')
+                omitted_msgs += 1
+              end
             elsif tool_use_block?(block)
               tool_use_msgs += 1
               has_tool_block = true
@@ -1171,7 +1177,11 @@ module RailsConsoleAi
               user_msgs += 1
               if content_str.include?('Code was executed') || content_str.include?('directly executed code')
                 output_msgs += 1
-                omitted_msgs += 1 if content_str.include?('Output omitted')
+                if is_expanded
+                  expanded_msgs += 1
+                elsif content_str.include?('Output omitted')
+                  omitted_msgs += 1
+                end
               end
             elsif role == 'assistant'
               assistant_msgs += 1
@@ -1181,7 +1191,11 @@ module RailsConsoleAi
           user_msgs += 1
           if content_str.include?('Code was executed') || content_str.include?('directly executed code')
             output_msgs += 1
-            omitted_msgs += 1 if content_str.include?('Output omitted')
+            if is_expanded
+              expanded_msgs += 1
+            elsif content_str.include?('Output omitted')
+              omitted_msgs += 1
+            end
           end
         elsif role == 'assistant'
           assistant_msgs += 1
@@ -1193,7 +1207,12 @@ module RailsConsoleAi
       $stderr.puts "#{d}[debug] ── LLM call ##{round + 1} ──#{r}"
       $stderr.puts "#{d}[debug]   system prompt: #{format_tokens(system_prompt.to_s.length)} chars#{r}"
       $stderr.puts "#{d}[debug]   messages: #{messages.length} (#{user_msgs} user, #{assistant_msgs} assistant, #{tool_result_msgs} tool results, #{tool_use_msgs} tool calls)#{r}"
-      $stderr.puts "#{d}[debug]   execution outputs: #{output_msgs} (#{omitted_msgs} omitted)#{r}" if output_msgs > 0 || omitted_msgs > 0
+      if output_msgs > 0 || omitted_msgs > 0 || expanded_msgs > 0
+        detail_parts = []
+        detail_parts << "#{omitted_msgs} omitted" if omitted_msgs > 0
+        detail_parts << "#{expanded_msgs} expanded" if expanded_msgs > 0
+        $stderr.puts "#{d}[debug]   execution outputs: #{output_msgs} (#{detail_parts.join(', ')})#{r}"
+      end
       $stderr.puts "#{d}[debug]   tools provided: #{tool_count}#{r}"
       $stderr.puts "#{d}[debug]   est. content size: #{format_tokens(total_content_chars)} chars#{r}"
       if total_input > 0 || total_output > 0
@@ -1239,12 +1258,12 @@ module RailsConsoleAi
     def debug_output_flags(content_text, msg)
       flags = []
       flags << "output ##{msg[:output_id]}" if msg[:output_id]
-      if content_text.include?('Output omitted')
+      if msg[:expanded] || (msg[:output_id] && @expanded_output_ids.include?(msg[:output_id]))
+        flags << "expanded"
+      elsif content_text.include?('Output omitted')
         flags << "omitted"
       elsif (m = content_text.match(/Output truncated at (\S+) of (\S+) chars/))
         flags << "truncated #{m[2]}→#{m[1]}"
-      elsif msg[:expanded]
-        flags << "expanded"
       end
       flags
     end
@@ -1290,7 +1309,13 @@ module RailsConsoleAi
 
     def trim_large_outputs(messages)
       messages.map do |msg|
-        next msg unless msg[:output_id] && !msg[:do_not_trim] && !msg[:expanded]
+        next msg unless msg[:output_id] && !msg[:do_not_trim]
+        # Re-expand messages that were expanded in a prior turn but lost content
+        # (because trim_message creates new hashes, disconnecting from @history)
+        if @expanded_output_ids.include?(msg[:output_id]) && !msg[:expanded]
+          expand_message_in_place(msg)
+        end
+        next msg if msg[:expanded]
         stored = @executor.recall_output(msg[:output_id])
         next msg unless stored && stored.length > LARGE_OUTPUT_THRESHOLD
         trim_message(msg)
@@ -1327,34 +1352,40 @@ module RailsConsoleAi
       expanded = []
       messages.each do |msg|
         next unless msg[:output_id] && ids.include?(msg[:output_id])
-        full_output = @executor.recall_output(msg[:output_id])
-        next unless full_output
-        # Replace content with full output (handle Anthropic, Bedrock, and user message formats)
-        if msg[:content].is_a?(Array)
-          msg[:content] = msg[:content].map do |block|
-            if block.is_a?(Hash) && tool_result_block?(block)
-              if block.key?(:tool_result)
-                # Bedrock format
-                block.merge(tool_result: block[:tool_result].merge(content: [{ text: full_output }]))
-              else
-                # Anthropic format
-                block.merge('content' => full_output)
-              end
-            else
-              block
-            end
-          end
-        elsif msg[:role].to_s == 'tool'
-          msg[:content] = full_output
-        else
-          # User messages (e.g., direct execution) — preserve first line, replace rest
-          first_line = msg[:content].to_s.lines.first&.chomp || ''
-          msg[:content] = "#{first_line}\n#{full_output}"
-        end
-        msg[:expanded] = true
+        next unless expand_message_in_place(msg)
         expanded << msg[:output_id]
       end
       expanded
+    end
+
+    def expand_message_in_place(msg)
+      full_output = @executor.recall_output(msg[:output_id])
+      return false unless full_output
+      # Replace content with full output (handle Anthropic, Bedrock, and user message formats)
+      if msg[:content].is_a?(Array)
+        msg[:content] = msg[:content].map do |block|
+          if block.is_a?(Hash) && tool_result_block?(block)
+            if block.key?(:tool_result)
+              # Bedrock format
+              block.merge(tool_result: block[:tool_result].merge(content: [{ text: full_output }]))
+            else
+              # Anthropic format
+              block.merge('content' => full_output)
+            end
+          else
+            block
+          end
+        end
+      elsif msg[:role].to_s == 'tool'
+        msg[:content] = full_output
+      else
+        # User messages (e.g., direct execution) — preserve first line, replace rest
+        first_line = msg[:content].to_s.lines.first&.chomp || ''
+        msg[:content] = "#{first_line}\n#{full_output}"
+      end
+      msg[:expanded] = true
+      @expanded_output_ids.add(msg[:output_id])
+      true
     end
 
     def extract_executed_code(history)
