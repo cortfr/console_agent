@@ -368,6 +368,13 @@ module RailsConsoleAi
       def register_execute_plan
         return unless @executor
 
+        # Check per-channel code execution permission
+        if @channel
+          unless RailsConsoleAi.configuration.username_allowed?(@channel.mode, 'allow_code_execution', @channel.user_identity)
+            return
+          end
+        end
+
         register(
           name: 'execute_code',
           description: 'Execute Ruby code in the Rails console and return the result. Use this for all code execution — simple queries, data lookups, reports, etc. The output of puts/print statements is automatically shown to the user. The return value is sent back to you so you can summarize the findings.',

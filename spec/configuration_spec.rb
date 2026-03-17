@@ -176,4 +176,56 @@ RSpec.describe RailsConsoleAi::Configuration do
       )
     end
   end
+
+  describe '#channel_setting' do
+    it 'returns the value from channels hash' do
+      config.channels = { 'slack' => { 'allowed_usernames' => ['alice'] } }
+      expect(config.channel_setting('slack', 'allowed_usernames')).to eq(['alice'])
+    end
+
+    it 'falls back to slack_allowed_usernames for backward compat' do
+      config.slack_allowed_usernames = ['bob']
+      expect(config.channel_setting('slack', 'allowed_usernames')).to eq(['bob'])
+    end
+
+    it 'prefers channels hash over legacy setting' do
+      config.slack_allowed_usernames = ['bob']
+      config.channels = { 'slack' => { 'allowed_usernames' => ['alice'] } }
+      expect(config.channel_setting('slack', 'allowed_usernames')).to eq(['alice'])
+    end
+
+    it 'returns nil for unconfigured settings' do
+      expect(config.channel_setting('slack', 'allow_code_execution')).to be_nil
+    end
+
+    it 'returns nil for unconfigured channel' do
+      expect(config.channel_setting('console', 'allowed_usernames')).to be_nil
+    end
+  end
+
+  describe '#username_allowed?' do
+    it 'returns true when setting is nil (not configured)' do
+      expect(config.username_allowed?('slack', 'allow_code_execution', 'frank')).to be true
+    end
+
+    it 'returns true when list includes ALL' do
+      config.channels = { 'slack' => { 'allow_code_execution' => 'ALL' } }
+      expect(config.username_allowed?('slack', 'allow_code_execution', 'anyone')).to be true
+    end
+
+    it 'returns true when username is in the list' do
+      config.channels = { 'slack' => { 'allow_code_execution' => ['frank'] } }
+      expect(config.username_allowed?('slack', 'allow_code_execution', 'Frank')).to be true
+    end
+
+    it 'returns false when username is not in the list' do
+      config.channels = { 'slack' => { 'allow_code_execution' => ['frank'] } }
+      expect(config.username_allowed?('slack', 'allow_code_execution', 'alice')).to be false
+    end
+
+    it 'is case insensitive' do
+      config.channels = { 'slack' => { 'allowed_usernames' => ['Frank'] } }
+      expect(config.username_allowed?('slack', 'allowed_usernames', 'frank')).to be true
+    end
+  end
 end

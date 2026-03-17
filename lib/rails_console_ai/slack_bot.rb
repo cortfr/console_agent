@@ -22,7 +22,9 @@ module RailsConsoleAi
 
       raise ConfigurationError, "SLACK_BOT_TOKEN is required" unless @bot_token
       raise ConfigurationError, "SLACK_APP_TOKEN is required (Socket Mode)" unless @app_token
-      raise ConfigurationError, "slack_allowed_usernames must be configured (e.g. ['alice'] or 'ALL')" unless RailsConsoleAi.configuration.slack_allowed_usernames
+      unless RailsConsoleAi.configuration.channel_setting('slack', 'allowed_usernames')
+        raise ConfigurationError, "slack allowed_usernames must be configured — either channels['slack']['allowed_usernames'] or slack_allowed_usernames (e.g. ['alice'] or 'ALL')"
+      end
 
       @bot_user_id = nil
       @sessions = {}       # thread_ts → { channel:, engine:, thread:, owner_user_id: }
@@ -316,8 +318,7 @@ module RailsConsoleAi
           unless session[:owner_user_id] == user_id
             # Non-owner: tell unrecognized users, silently ignore recognized non-owners
             chk_name = resolve_user_name(user_id)
-            chk_list = Array(RailsConsoleAi.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
-            unless chk_list.include?('all') || chk_list.include?(chk_name.to_s.downcase)
+            unless RailsConsoleAi.configuration.username_allowed?('slack', 'allowed_usernames', chk_name)
               puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{chk_name} << (ignored — not in allowed usernames)"
               post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{chk_name}). Ask an admin to add you to the allowed usernames list.")
             end
@@ -338,8 +339,7 @@ module RailsConsoleAi
       # --- Common processing (DMs and channels) ---
       user_name = resolve_user_name(user_id)
 
-      allowed_list = Array(RailsConsoleAi.configuration.slack_allowed_usernames).map(&:to_s).map(&:downcase)
-      unless allowed_list.include?('all') || allowed_list.include?(user_name.to_s.downcase)
+      unless RailsConsoleAi.configuration.username_allowed?('slack', 'allowed_usernames', user_name)
         puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name} << (ignored — not in allowed usernames)"
         post_message(channel: channel_id, thread_ts: thread_ts, text: "Sorry, I don't recognize your username (@#{user_name}). Ask an admin to add you to the allowed usernames list.")
         return
@@ -497,6 +497,14 @@ module RailsConsoleAi
     end
 
     def handle_direct_code(session, channel_id, thread_ts, raw_code, user_name, user_id)
+      # Check code execution permission
+      unless RailsConsoleAi.configuration.username_allowed?('slack', 'allow_code_execution', user_name)
+        puts "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name} << (blocked — not in allow_code_execution)"
+        post_message(channel: channel_id, thread_ts: thread_ts,
+          text: "Sorry, you don't have permission to execute code directly. Ask an admin to add you to the `allow_code_execution` list.")
+        return
+      end
+
       # Ensure a session exists for this thread
       unless session
         start_direct_session(channel_id, thread_ts, user_name, user_id)

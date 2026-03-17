@@ -29,9 +29,8 @@ RailsConsoleAi.configure do |config|
   # config.local_model = 'qwen2.5:7b'
   # config.local_api_key = nil
 
-  # Slack: which users the bot responds to (required for Slack mode)
-  # config.slack_allowed_usernames = ['alice', 'bob']  # specific users
-  # config.slack_allowed_usernames = 'ALL'              # everyone
+  # Slack: which users the bot responds to (legacy — prefer channels config below)
+  # config.slack_allowed_usernames = ['alice', 'bob']
 
   # AWS Bedrock provider (uses AWS credential chain — no API key needed):
   # config.provider = :bedrock
@@ -85,7 +84,12 @@ RailsConsoleAi.configure do |config|
 
   # Per-channel settings (channel mode keys: 'slack', 'console'):
   # config.channels = {
-  #   'slack'   => { 'pinned_memory_tags' => ['sharding'], 'bypass_guards_for_methods' => ['ChangeApproval#approve_by!'] },
+  #   'slack' => {
+  #     'allowed_usernames' => ['alice', 'bob'],                          # who can use the bot (or 'ALL')
+  #     'allow_code_execution' => ['alice'],                              # who can run code (nil = everyone)
+  #     'pinned_memory_tags' => ['sharding'],
+  #     'bypass_guards_for_methods' => ['ChangeApproval#approve_by!']
+  #   },
   #   'console' => { 'pinned_memory_tags' => [] }
   # }
 end

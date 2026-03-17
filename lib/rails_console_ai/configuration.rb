@@ -71,6 +71,29 @@ module RailsConsoleAi
       @user_extra_info[username.to_s.downcase]
     end
 
+    # Look up a per-channel setting with backward compatibility.
+    # Falls back to top-level slack_* config when channels hash doesn't have the key.
+    def channel_setting(mode, key)
+      channel_cfg = @channels[mode.to_s] || {}
+      value = channel_cfg[key.to_s]
+
+      # Backward compatibility: slack_allowed_usernames → channels.slack.allowed_usernames
+      if value.nil? && mode.to_s == 'slack' && key.to_s == 'allowed_usernames'
+        value = @slack_allowed_usernames
+      end
+
+      value
+    end
+
+    # Check if a username is permitted by a channel setting.
+    # Returns true when the setting is nil (not configured = no restriction).
+    def username_allowed?(mode, key, username)
+      list = channel_setting(mode, key)
+      return true if list.nil?
+      normalized = Array(list).map(&:to_s).map(&:downcase)
+      normalized.include?('all') || normalized.include?(username.to_s.downcase)
+    end
+
     def safety_guards
       @safety_guards ||= begin
         require 'rails_console_ai/safety_guards'
