@@ -58,8 +58,8 @@ module RailsConsoleAi
       @engine.send(:send_query, query, conversation: conversation)
     end
 
-    def trim_old_outputs(messages)
-      @engine.send(:trim_old_outputs, messages)
+    def trim_large_outputs(messages)
+      @engine.send(:trim_large_outputs, messages)
     end
   end
 end

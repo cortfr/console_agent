@@ -3,7 +3,6 @@ module RailsConsoleAi
     attr_reader :history, :total_input_tokens, :total_output_tokens,
                 :interactive_session_id, :session_name
 
-    RECENT_OUTPUTS_TO_KEEP = 2
     LARGE_OUTPUT_THRESHOLD = 10_000      # chars — truncate tool results larger than this immediately
     LARGE_OUTPUT_PREVIEW_CHARS = 8_000   # chars — how much of the output the LLM sees upfront
     LOOP_WARN_THRESHOLD = 3              # same tool+args repeated → inject warning
@@ -246,12 +245,11 @@ module RailsConsoleAi
       result_str = output_parts.join("\n\n")
 
       context_msg = "User directly executed code: `#{raw_code}`"
+      output_id = @executor.store_output(result_str)
       if result_str.length > LARGE_OUTPUT_THRESHOLD
-        output_id = @executor.store_output(result_str)
         preview = result_str[0, LARGE_OUTPUT_PREVIEW_CHARS]
         context_msg += "\n#{preview}\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{result_str.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
       elsif !output_parts.empty?
-        output_id = @executor.store_output(result_str)
         context_msg += "\n#{result_str}"
       end
       @history << { role: :user, content: context_msg, output_id: output_id }
@@ -419,7 +417,7 @@ module RailsConsoleAi
         return
       end
 
-      trimmed = trim_old_outputs(@history)
+      trimmed = trim_large_outputs(@history)
       stdout.puts "\e[36m  Conversation (#{trimmed.length} messages, as sent to LLM):\e[0m"
       trimmed.each_with_index do |msg, i|
         role = msg[:role].to_s
@@ -757,7 +755,7 @@ module RailsConsoleAi
                    [{ role: :user, content: query }]
                  end
 
-      messages = trim_old_outputs(messages) if conversation
+      messages = trim_large_outputs(messages) if conversation
 
       send_query_with_tools(messages)
     end
@@ -794,9 +792,9 @@ module RailsConsoleAi
           @channel.display_dim("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
         end
 
-        # Trim old tool outputs between rounds to prevent context explosion.
+        # Trim large tool outputs between rounds to prevent context explosion.
         # The LLM can still retrieve omitted outputs via recall_output.
-        messages = trim_old_outputs(messages) if round > 0
+        messages = trim_large_outputs(messages) if round > 0
 
         if RailsConsoleAi.configuration.debug
           debug_pre_call(round, messages, active_system_prompt, tools, total_input, total_output)
@@ -876,17 +874,15 @@ module RailsConsoleAi
 
           tool_msg = provider.format_tool_result(tc[:id], tool_result)
           full_text = tool_result.to_s
+          output_id = @executor.store_output(full_text)
+          tool_msg[:output_id] = output_id
           if full_text.length > LARGE_OUTPUT_THRESHOLD
-            output_id = @executor.store_output(full_text)
-            tool_msg[:output_id] = output_id
             truncated = full_text[0, LARGE_OUTPUT_PREVIEW_CHARS]
             truncated += "\n\n[Output truncated at #{LARGE_OUTPUT_PREVIEW_CHARS} of #{full_text.length} chars — use recall_output tool with id #{output_id} to retrieve the full output]"
             tool_msg = provider.format_tool_result(tc[:id], truncated)
             tool_msg[:output_id] = output_id
-          elsif full_text.length > 200
-            tool_msg[:output_id] = @executor.store_output(full_text)
           end
-          tool_msg[:memory_recall] = true if %w[recall_memory recall_memories activate_skill
+          tool_msg[:do_not_trim] = true if %w[recall_memory recall_memories activate_skill
                                                 describe_model describe_table list_models list_tables].include?(tc[:name])
           messages << tool_msg
           new_messages << tool_msg
@@ -913,10 +909,6 @@ module RailsConsoleAi
 
         exhausted = true if round == max_rounds - 1
       end
-
-      # Re-truncate any outputs that were expanded for the LLM — the LLM has
-      # seen them and responded, so collapse back to save context on future calls.
-      re_truncate_expanded(messages)
 
       if exhausted
         $stdout.puts "\e[33m  Hit tool round limit (#{max_rounds}). Forcing final answer. Increase with: RailsConsoleAi.configure { |c| c.max_tool_rounds = 200 }\e[0m"
@@ -1293,20 +1285,12 @@ module RailsConsoleAi
 
     # --- Conversation context management ---
 
-    def trim_old_outputs(messages)
-      output_indices = messages.each_with_index
-                               .select { |m, _| m[:output_id] && !m[:memory_recall] }
-                               .map { |_, i| i }
-
-      return messages if output_indices.length <= RECENT_OUTPUTS_TO_KEEP
-
-      trim_indices = output_indices[0..-(RECENT_OUTPUTS_TO_KEEP + 1)]
-      messages.each_with_index.map do |msg, i|
-        if trim_indices.include?(i)
-          trim_message(msg)
-        else
-          msg
-        end
+    def trim_large_outputs(messages)
+      messages.map do |msg|
+        next msg unless msg[:output_id] && !msg[:do_not_trim] && !msg[:expanded]
+        stored = @executor.recall_output(msg[:output_id])
+        next msg unless stored && stored.length > LARGE_OUTPUT_THRESHOLD
+        trim_message(msg)
       end
     end
 
@@ -1342,8 +1326,6 @@ module RailsConsoleAi
         next unless msg[:output_id] && ids.include?(msg[:output_id])
         full_output = @executor.recall_output(msg[:output_id])
         next unless full_output
-        # Save original content so re_truncate_expanded can restore it
-        msg[:pre_expand_content] = msg[:content]
         # Replace content with full output (handle Anthropic, Bedrock, and user message formats)
         if msg[:content].is_a?(Array)
           msg[:content] = msg[:content].map do |block|
@@ -1370,16 +1352,6 @@ module RailsConsoleAi
         expanded << msg[:output_id]
       end
       expanded
-    end
-
-    # Restore messages that were temporarily expanded back to their original
-    # (preview/truncated) content. Called after the LLM has seen the expanded
-    # content and responded.
-    def re_truncate_expanded(messages)
-      messages.each do |msg|
-        next unless msg.delete(:expanded)
-        msg[:content] = msg.delete(:pre_expand_content)
-      end
     end
 
     def extract_executed_code(history)

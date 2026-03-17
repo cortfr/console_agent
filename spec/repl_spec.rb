@@ -504,81 +504,81 @@ RSpec.describe RailsConsoleAi::Repl do
     end
   end
 
-  describe 'output trimming in conversation' do
-    it 'keeps recent outputs in full and trims older ones' do
-      # Build history with 4 execution outputs (more than RECENT_OUTPUTS_TO_KEEP=2)
+  describe 'trim_large_outputs' do
+    let(:engine) { repl.instance_variable_get(:@engine) }
+    let(:executor) { engine.instance_variable_get(:@executor) }
+    let(:large_content) { 'x' * 11_000 }
+
+    it 'trims all messages with large stored outputs' do
       history = []
       4.times do |i|
-        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 1 }
+        oid = executor.store_output(large_content)
+        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: oid }
         history << { role: :assistant, content: "Response #{i}" }
       end
 
-      repl.instance_variable_set(:@history, history)
-      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed = engine.send(:trim_large_outputs, history)
 
-      # First 2 outputs should be trimmed (4 - 2 = 2)
       trimmed_user_msgs = trimmed.select { |m| m[:role] == :user }
-      expect(trimmed_user_msgs[0][:content]).to include('[Output omitted')
-      expect(trimmed_user_msgs[0][:content]).to include('recall_output')
-      expect(trimmed_user_msgs[1][:content]).to include('[Output omitted')
-
-      # Last 2 should be kept in full
-      expect(trimmed_user_msgs[2][:content]).to include('data_2')
-      expect(trimmed_user_msgs[3][:content]).to include('data_3')
+      trimmed_user_msgs.each do |msg|
+        expect(msg[:content]).to include('[Output omitted')
+        expect(msg[:content]).to include('recall_output')
+      end
     end
 
-    it 'does not trim when outputs are within the limit' do
+    it 'does not trim messages with small stored outputs' do
       history = []
-      2.times do |i|
-        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 1 }
+      4.times do |i|
+        oid = executor.store_output("small data #{i}")
+        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: oid }
       end
 
-      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed = engine.send(:trim_large_outputs, history)
       trimmed.each do |msg|
         expect(msg[:content]).not_to include('[Output omitted')
       end
     end
 
-    it 'preserves output_id on messages' do
-      history = [{ role: :user, content: "test", output_id: 1 }]
-      trimmed = repl.send(:trim_old_outputs, history)
-      expect(trimmed.first[:output_id]).to eq(1)
+    it 'preserves output_id on trimmed messages' do
+      oid = executor.store_output(large_content)
+      history = [{ role: :user, content: "test", output_id: oid }]
+      trimmed = engine.send(:trim_large_outputs, history)
+      expect(trimmed.first[:output_id]).to eq(oid)
     end
 
     it 'trims Anthropic tool result messages' do
       history = []
-      4.times do |i|
+      3.times do |i|
+        oid = executor.store_output(large_content)
         history << {
           role: 'user',
           content: [{ 'type' => 'tool_result', 'tool_use_id' => "tool_#{i}", 'content' => "big data #{i}" }],
-          output_id: i + 1
+          output_id: oid
         }
         history << { role: 'assistant', content: "Response #{i}" }
       end
 
-      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed = engine.send(:trim_large_outputs, history)
 
-      # First 2 tool results should be trimmed (4 - 2 = 2)
       trimmed_tool_msgs = trimmed.select { |m| m[:content].is_a?(Array) }
-      expect(trimmed_tool_msgs[0][:content][0]['content']).to include('recall_output')
-      expect(trimmed_tool_msgs[1][:content][0]['content']).to include('recall_output')
-      # Last 2 should keep original content
-      expect(trimmed_tool_msgs[2][:content][0]['content']).to eq('big data 2')
-      expect(trimmed_tool_msgs[3][:content][0]['content']).to eq('big data 3')
+      trimmed_tool_msgs.each do |msg|
+        expect(msg[:content][0]['content']).to include('recall_output')
+      end
     end
 
     it 'trims OpenAI tool result messages' do
       history = []
-      4.times do |i|
-        history << { role: 'tool', tool_call_id: "tc_#{i}", content: "big data #{i}", output_id: i + 1 }
+      3.times do |i|
+        oid = executor.store_output(large_content)
+        history << { role: 'tool', tool_call_id: "tc_#{i}", content: "big data #{i}", output_id: oid }
         history << { role: 'assistant', content: "Response #{i}" }
       end
 
-      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed = engine.send(:trim_large_outputs, history)
       tool_msgs = trimmed.select { |m| m[:role].to_s == 'tool' }
-      expect(tool_msgs[0][:content]).to include('recall_output')
-      expect(tool_msgs[1][:content]).to include('recall_output')
-      expect(tool_msgs[2][:content]).to eq('big data 2')
+      tool_msgs.each do |msg|
+        expect(msg[:content]).to include('recall_output')
+      end
     end
 
     it 'passes through messages without output_id unchanged' do
@@ -586,47 +586,31 @@ RSpec.describe RailsConsoleAi::Repl do
         { role: :user, content: "hello" },
         { role: :assistant, content: "hi" }
       ]
-      trimmed = repl.send(:trim_old_outputs, history)
+      trimmed = engine.send(:trim_large_outputs, history)
       expect(trimmed[0][:content]).to eq("hello")
       expect(trimmed[1][:content]).to eq("hi")
     end
 
-    it 'does not trim recall_memory results (memory_recall flag)' do
-      history = []
-      # recall_memory result (should be preserved)
-      history << { role: 'tool', content: "**Sharding**\nFull sharding details...", output_id: 1, memory_recall: true }
-      history << { role: 'assistant', content: "Based on sharding..." }
-      # 3 more regular outputs (pushes past RECENT_OUTPUTS_TO_KEEP)
-      3.times do |i|
-        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 10 }
-        history << { role: :assistant, content: "Response #{i}" }
-      end
+    it 'does not trim messages with do_not_trim flag' do
+      oid = executor.store_output(large_content)
+      history = [
+        { role: 'tool', content: "**Sharding**\nFull sharding details...", output_id: oid, do_not_trim: true }
+      ]
 
-      trimmed = repl.send(:trim_old_outputs, history)
-
-      # Memory recall should still have its full content
-      memory_msg = trimmed.find { |m| m[:memory_recall] }
-      expect(memory_msg[:content]).to include('Full sharding details')
-      expect(memory_msg[:content]).not_to include('[Output omitted')
+      trimmed = engine.send(:trim_large_outputs, history)
+      expect(trimmed[0][:content]).to include('Full sharding details')
+      expect(trimmed[0][:content]).not_to include('[Output omitted')
     end
 
-    it 'does not trim messages flagged as memory_recall' do
-      history = []
-      # Memory recall result (should be preserved)
-      history << { role: 'tool', content: "**Sharding**\nFull sharding details...", output_id: 1, memory_recall: true }
-      history << { role: 'assistant', content: "Based on sharding..." }
-      # 3 more regular outputs (pushes past RECENT_OUTPUTS_TO_KEEP)
-      3.times do |i|
-        history << { role: :user, content: "Code was executed. Output:\ndata_#{i}", output_id: i + 10 }
-        history << { role: :assistant, content: "Response #{i}" }
-      end
+    it 'does not trim messages with expanded flag' do
+      oid = executor.store_output(large_content)
+      history = [
+        { role: 'tool', content: large_content, output_id: oid, expanded: true }
+      ]
 
-      trimmed = repl.send(:trim_old_outputs, history)
-
-      # Memory recall should still have its full content
-      memory_msg = trimmed.find { |m| m[:memory_recall] }
-      expect(memory_msg[:content]).to include('Full sharding details')
-      expect(memory_msg[:content]).not_to include('[Output omitted')
+      trimmed = engine.send(:trim_large_outputs, history)
+      expect(trimmed[0][:content]).to eq(large_content)
+      expect(trimmed[0][:content]).not_to include('[Output omitted')
     end
   end
 
@@ -695,52 +679,6 @@ RSpec.describe RailsConsoleAi::Repl do
       expanded = engine.send(:expand_outputs_in_place, messages, [999])
       expect(expanded).to be_empty
       expect(messages[0]).to have_key(:output_id)
-    end
-  end
-
-  describe 're_truncate_expanded' do
-    let(:engine) { repl.instance_variable_get(:@engine) }
-    let(:executor) { engine.instance_variable_get(:@executor) }
-
-    it 'restores original content after expansion' do
-      output_id = executor.store_output("full data here")
-      original_content = "truncated preview...\n[Output truncated — use recall_output]"
-      messages = [
-        { role: 'tool', content: original_content, output_id: output_id }
-      ]
-
-      # Expand then re-truncate
-      engine.send(:expand_outputs_in_place, messages, [output_id])
-      expect(messages[0][:content]).to eq("full data here")
-
-      engine.send(:re_truncate_expanded, messages)
-      expect(messages[0][:content]).to eq(original_content)
-      expect(messages[0]).not_to have_key(:expanded)
-      expect(messages[0]).not_to have_key(:pre_expand_content)
-      expect(messages[0][:output_id]).to eq(output_id)
-    end
-
-    it 'does not touch messages without expanded flag' do
-      messages = [
-        { role: 'tool', content: 'keep this', output_id: 1 }
-      ]
-
-      engine.send(:re_truncate_expanded, messages)
-
-      expect(messages[0][:content]).to eq('keep this')
-    end
-
-    it 'restores user message original content with preview' do
-      output_id = executor.store_output("full data")
-      original_content = "User directly executed code: `test`\npreview of data...\n[Output truncated]"
-      messages = [
-        { role: :user, content: original_content, output_id: output_id }
-      ]
-
-      engine.send(:expand_outputs_in_place, messages, [output_id])
-      engine.send(:re_truncate_expanded, messages)
-
-      expect(messages[0][:content]).to eq(original_content)
     end
   end
 
