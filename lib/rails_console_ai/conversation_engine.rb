@@ -235,7 +235,7 @@ module RailsConsoleAi
     end
 
     def execute_direct(raw_code)
-      exec_result = @executor.execute(raw_code)
+      exec_result = @executor.execute_unsafe(raw_code)
 
       output_parts = []
       output_parts << "Output:\n#{@executor.last_output.strip}" if @executor.last_output && !@executor.last_output.strip.empty?

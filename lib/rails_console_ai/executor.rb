@@ -310,6 +310,14 @@ module RailsConsoleAi
       end
     end
 
+    def execute_unsafe(code)
+      guards = RailsConsoleAi.configuration.safety_guards
+      guards.disable!
+      execute(code)
+    ensure
+      guards.enable!
+    end
+
     private
 
     def danger_allowed?
@@ -342,14 +350,6 @@ module RailsConsoleAi
       else
         "#{blocked_key} for :#{guard}"
       end
-    end
-
-    def execute_unsafe(code)
-      guards = RailsConsoleAi.configuration.safety_guards
-      guards.disable!
-      execute(code)
-    ensure
-      guards.enable!
     end
 
     def execute_prompt
