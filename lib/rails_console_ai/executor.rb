@@ -148,7 +148,7 @@ module RailsConsoleAi
     rescue SyntaxError => e
       $stdout = old_stdout if old_stdout
       @last_error = "SyntaxError: #{e.message}"
-      display_error(@last_error)
+      log_execution_error(@last_error)
       @last_output = nil
       nil
     rescue => e
@@ -166,7 +166,7 @@ module RailsConsoleAi
       end
       @last_error = "#{e.class}: #{e.message}"
       backtrace = e.backtrace.first(3).map { |line| "  #{line}" }.join("\n")
-      display_error("Error: #{@last_error}\n#{backtrace}")
+      log_execution_error("Error: #{@last_error}\n#{backtrace}")
       @last_output = captured_output&.string
       nil
     end
@@ -321,6 +321,15 @@ module RailsConsoleAi
         @channel.display_error(msg)
       else
         $stderr.puts colorize(msg, :red)
+      end
+    end
+
+    # Log code execution errors — full details to STDOUT, brief summary to Slack
+    def log_execution_error(msg)
+      if @channel && @channel.mode == 'slack'
+        RailsConsoleAi.logger.info("Code execution error: #{msg}")
+      else
+        display_error(msg)
       end
     end
 

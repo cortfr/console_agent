@@ -450,7 +450,7 @@ module RailsConsoleAi
           end
           engine.process_message(text)
         rescue => e
-          channel.display_error("Error: #{e.class}: #{e.message}")
+          channel.display_error("Something went wrong. Please try again.")
           RailsConsoleAi.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
@@ -488,7 +488,7 @@ module RailsConsoleAi
         begin
           engine.process_message(text)
         rescue => e
-          channel.display_error("Error: #{e.class}: #{e.message}")
+          channel.display_error("Something went wrong. Please try again.")
           RailsConsoleAi.logger.error("SlackBot session error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
@@ -521,7 +521,7 @@ module RailsConsoleAi
           end
           engine.send(:log_interactive_turn)
         rescue => e
-          channel.display_error("Error: #{e.class}: #{e.message}")
+          channel.display_error("Something went wrong. Please try again.")
           RailsConsoleAi.logger.error("SlackBot direct code error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         ensure
           ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
@@ -646,7 +646,7 @@ module RailsConsoleAi
             engine.send(:log_interactive_turn)
           rescue => e
             post_message(channel: channel_id, thread_ts: thread_ts,
-              text: "Retry failed: #{e.message}")
+              text: ":x: Retry didn't work. Please try again.")
           ensure
             ActiveRecord::Base.clear_active_connections! if defined?(ActiveRecord::Base)
           end

@@ -47,7 +47,7 @@ module RailsConsoleAi
           conversation << { role: :assistant, content: @_last_result_text }
           conversation << { role: :user, content: error_msg }
 
-          @channel.display_dim("  Attempting to fix...")
+          @channel.display_dim("  Ran into an issue, trying a different approach...")
           exec_result, code, executed = one_shot_round(conversation)
         end
 
@@ -112,7 +112,7 @@ module RailsConsoleAi
 
       status = send_and_execute
       if status == :error
-        @channel.display_dim("  Attempting to fix...")
+        @channel.display_dim("  Ran into an issue, trying a different approach...")
         send_and_execute
       end
     end
