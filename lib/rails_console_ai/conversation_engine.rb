@@ -1226,22 +1226,35 @@ module RailsConsoleAi
       messages.each_with_index do |msg, i|
         role = msg[:role].to_s
         parts = []
+        display_role = role
 
-        if msg[:content].is_a?(Array)
+        if role == 'tool'
+          display_role = 'tool_result'
+          text = msg[:content].to_s
+          flags = debug_output_flags(text, msg)
+          flag_str = flags.any? ? ", #{flags.join(', ')}" : ""
+          parts << "#{text.length} chars#{flag_str}"
+        elsif msg[:content].is_a?(Array)
+          has_tool_result = false
+          has_tool_use = false
           msg[:content].each do |block|
             next unless block.is_a?(Hash)
             if tool_result_block?(block)
+              has_tool_result = true
               content = tool_result_content(block)
               flags = debug_output_flags(content, msg)
               flag_str = flags.any? ? ", #{flags.join(', ')}" : ""
-              parts << "tool_result(#{content.length} chars#{flag_str})"
+              parts << "#{content.length} chars#{flag_str}"
             elsif tool_use_block?(block)
+              has_tool_use = true
               parts << "tool_use: #{tool_use_name(block)}"
             elsif block['type'] == 'text' || block.key?(:text)
               text = block['text'] || block[:text]
               parts << "text(#{text.to_s.length} chars)" if text.to_s.length > 0
             end
           end
+          display_role = 'tool_result' if has_tool_result && !has_tool_use
+          display_role = 'assistant' if has_tool_use && !has_tool_result
         else
           text = msg[:content].to_s
           preview = text.length > 60 ? text[0, 57] + "..." : text
@@ -1251,7 +1264,7 @@ module RailsConsoleAi
           parts << "\"#{preview}\" #{text.length} chars#{flag_str}"
         end
 
-        $stderr.puts "#{d}[debug]     ##{i} #{role}: [#{parts.join(', ')}]#{r}"
+        $stderr.puts "#{d}[debug]     ##{i} #{display_role}: [#{parts.join(', ')}]#{r}"
       end
     end
 
@@ -1292,9 +1305,9 @@ module RailsConsoleAi
         end
         session_cost = (total_input * pricing[:input]) + (total_output * pricing[:output])
         parts << "~$#{'%.4f' % cost}"
-        $stderr.puts "#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"
+        $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}  (session: ~$#{'%.4f' % session_cost})#{r}"
       else
-        $stderr.puts "#{d}[debug]   ← response: #{parts.join(' | ')}#{r}"
+        $stderr.puts "\n#{d}[debug]   ← response: #{parts.join(' | ')}#{r}"
       end
 
       if result.tool_use?
