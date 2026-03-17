@@ -945,6 +945,9 @@ module RailsConsoleAi
 
       parts = []
       parts << "in: #{input}" if input
+      cache_r = result.cache_read_input_tokens || 0
+      cache_w = result.cache_write_input_tokens || 0
+      parts << "cache r: #{cache_r} w: #{cache_w}" if cache_r > 0 || cache_w > 0
       parts << "out: #{output}" if output
       parts << "total: #{result.total_tokens}"
 
