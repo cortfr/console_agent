@@ -848,12 +848,13 @@ module RailsConsoleAi
             next
           end
 
+          # Display any pending LLM text before executing the tool
+          if last_thinking
+            last_thinking.split("\n").each { |line| @channel.display_dim("  #{line}") }
+            last_thinking = nil
+          end
+
           if tc[:name] == 'ask_user' || tc[:name] == 'execute_plan'
-            # Display any pending LLM text before prompting the user
-            if last_thinking
-              last_thinking.split("\n").each { |line| @channel.display_dim("  #{line}") }
-              last_thinking = nil
-            end
             tool_result = tools.execute(tc[:name], tc[:arguments])
           else
             args_display = format_tool_args(tc[:name], tc[:arguments])
