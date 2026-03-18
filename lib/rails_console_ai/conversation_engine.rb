@@ -264,7 +264,7 @@ module RailsConsoleAi
 
     def send_and_execute
       begin
-        result, tool_messages = send_query(nil, conversation: @history)
+        result, tool_messages, last_llm_stats = send_query(nil, conversation: @history)
       rescue Providers::ProviderError => e
         if e.message.include?("prompt is too long") && @history.length >= 6
           @channel.display_warning("  Context limit reached. Run /compact to reduce context size, then try again.")
@@ -289,7 +289,11 @@ module RailsConsoleAi
       # For tool_use results, the assistant message is already in tool_messages via
       # format_assistant_message, so adding result.text again would duplicate it —
       # and if the text is empty, Bedrock rejects the empty content array.
-      @history << { role: :assistant, content: result.text } unless result.tool_use?
+      unless result.tool_use?
+        entry = { role: :assistant, content: result.text }
+        entry[:llm_stats] = last_llm_stats if last_llm_stats
+        @history << entry
+      end
 
       return :no_code unless code && !code.strip.empty?
       return :cancelled if @channel.cancelled?
@@ -418,15 +422,13 @@ module RailsConsoleAi
         return
       end
 
-      trimmed = trim_large_outputs(@history)
-      stdout.puts "\e[36m  Conversation (#{trimmed.length} messages, as sent to LLM):\e[0m"
-      trimmed.each_with_index do |msg, i|
-        role = msg[:role].to_s
-        content = msg[:content].to_s
-        label = role == 'user' ? "\e[33m[user]\e[0m" : "\e[36m[assistant]\e[0m"
-        stdout.puts "#{label} #{content}"
-        stdout.puts if i < trimmed.length - 1
-      end
+      messages = trim_large_outputs(@history)
+      system_prompt = context
+      require 'rails_console_ai/tools/registry'
+      tools = Tools::Registry.new(executor: @executor, channel: @channel) rescue nil
+      opts = { io: stdout, prefix: "  ", d: "\e[2m", r: "\e[0m" }
+      conversation_summary(messages, system_prompt, tools, **opts)
+      conversation_messages(messages, **opts)
     end
 
     def context
@@ -822,6 +824,7 @@ module RailsConsoleAi
         last_thinking = (result.text && !result.text.strip.empty?) ? result.text.strip : nil
 
         assistant_msg = provider.format_assistant_message(result)
+        assistant_msg[:llm_stats] = format_llm_stats(result)
         messages << assistant_msg
         new_messages << assistant_msg
 
@@ -919,13 +922,14 @@ module RailsConsoleAi
         total_output += result.output_tokens || 0
       end
 
+      last_llm_stats = result ? format_llm_stats(result) : nil
       final_result = Providers::ChatResult.new(
         text: result ? result.text : '',
         input_tokens: total_input,
         output_tokens: total_output,
         stop_reason: result ? result.stop_reason : :end_turn
       )
-      [final_result, new_messages]
+      [final_result, new_messages, last_llm_stats]
     end
 
     def track_usage(result)
@@ -1141,7 +1145,15 @@ module RailsConsoleAi
     def debug_pre_call(round, messages, system_prompt, tools, total_input, total_output)
       d = "\e[35m"
       r = "\e[0m"
+      $stderr.puts "#{d}[debug] ── LLM call ##{round + 1} ──#{r}"
+      conversation_summary(messages, system_prompt, tools, io: $stderr, prefix: "[debug]   ", d: d, r: r)
+      if total_input > 0 || total_output > 0
+        $stderr.puts "#{d}[debug]   tokens so far: in: #{format_tokens(total_input)} | out: #{format_tokens(total_output)}#{r}"
+      end
+      conversation_messages(messages, io: $stderr, prefix: "[debug]   ", d: d, r: r, show_pending: true)
+    end
 
+    def conversation_summary(messages, system_prompt, tools, io:, prefix:, d:, r:)
       user_msgs = 0; assistant_msgs = 0; tool_result_msgs = 0; tool_use_msgs = 0
       output_msgs = 0; omitted_msgs = 0; expanded_msgs = 0
       total_content_chars = system_prompt.to_s.length
@@ -1171,7 +1183,6 @@ module RailsConsoleAi
               has_tool_block = true
             end
           end
-          # Array content with no tool blocks — count by role
           unless has_tool_block
             if role == 'user'
               user_msgs += 1
@@ -1204,29 +1215,32 @@ module RailsConsoleAi
 
       tool_count = tools.respond_to?(:definitions) ? tools.definitions.length : 0
 
-      $stderr.puts "#{d}[debug] ── LLM call ##{round + 1} ──#{r}"
-      $stderr.puts "#{d}[debug]   system prompt: #{format_tokens(system_prompt.to_s.length)} chars#{r}"
-      $stderr.puts "#{d}[debug]   messages: #{messages.length} (#{user_msgs} user, #{assistant_msgs} assistant, #{tool_result_msgs} tool results, #{tool_use_msgs} tool calls)#{r}"
+      io.puts "#{d}#{prefix}system prompt: #{format_tokens(system_prompt.to_s.length)} chars#{r}"
+      io.puts "#{d}#{prefix}messages: #{messages.length} (#{user_msgs} user, #{assistant_msgs} assistant, #{tool_result_msgs} tool results, #{tool_use_msgs} tool calls)#{r}"
       if output_msgs > 0 || omitted_msgs > 0 || expanded_msgs > 0
         detail_parts = []
         detail_parts << "#{omitted_msgs} omitted" if omitted_msgs > 0
         detail_parts << "#{expanded_msgs} expanded" if expanded_msgs > 0
-        $stderr.puts "#{d}[debug]   execution outputs: #{output_msgs} (#{detail_parts.join(', ')})#{r}"
+        io.puts "#{d}#{prefix}execution outputs: #{output_msgs} (#{detail_parts.join(', ')})#{r}"
       end
-      $stderr.puts "#{d}[debug]   tools provided: #{tool_count}#{r}"
-      $stderr.puts "#{d}[debug]   est. content size: #{format_tokens(total_content_chars)} chars#{r}"
-      if total_input > 0 || total_output > 0
-        $stderr.puts "#{d}[debug]   tokens so far: in: #{format_tokens(total_input)} | out: #{format_tokens(total_output)}#{r}"
-      end
-      debug_message_summary(messages, d, r)
+      io.puts "#{d}#{prefix}tools provided: #{tool_count}#{r}"
+      io.puts "#{d}#{prefix}est. content size: #{format_tokens(total_content_chars)} chars#{r}"
     end
 
-    def debug_message_summary(messages, d, r)
-      $stderr.puts "#{d}[debug]   conversation:#{r}"
+    def conversation_messages(messages, io:, prefix:, d:, r:, show_pending: false)
+      io.puts "#{d}#{prefix}conversation:#{r}"
+      llm_call = 0
       messages.each_with_index do |msg, i|
         role = msg[:role].to_s
         parts = []
         display_role = role
+        is_assistant = role == 'assistant' || (msg[:content].is_a?(Array) && msg[:content].any? { |b| b.is_a?(Hash) && tool_use_block?(b) })
+
+        if is_assistant
+          llm_call += 1
+          stats = msg[:llm_stats] ? " → #{msg[:llm_stats]}" : ""
+          io.puts "#{d}#{prefix}  ── LLM call ##{llm_call}#{stats} ──#{r}"
+        end
 
         if role == 'tool'
           display_role = 'tool_result'
@@ -1264,8 +1278,32 @@ module RailsConsoleAi
           parts << "\"#{preview}\" #{text.length} chars#{flag_str}"
         end
 
-        $stderr.puts "#{d}[debug]     ##{i} #{display_role}: [#{parts.join(', ')}]#{r}"
+        io.puts "#{d}#{prefix}  ##{i} #{display_role}: [#{parts.join(', ')}]#{r}"
       end
+      if show_pending
+        llm_call += 1
+        io.puts "#{d}#{prefix}  ── LLM call ##{llm_call} (pending) ──#{r}"
+      end
+    end
+
+    def format_llm_stats(result)
+      parts = ["in: #{format_tokens(result.input_tokens || 0)}"]
+      parts << "out: #{format_tokens(result.output_tokens || 0)}"
+      cache_r = result.cache_read_input_tokens || 0
+      cache_w = result.cache_write_input_tokens || 0
+      parts << "cache r: #{format_tokens(cache_r)} w: #{format_tokens(cache_w)}" if cache_r > 0 || cache_w > 0
+      model = effective_model
+      pricing = Configuration::PRICING[model]
+      if pricing
+        cost = ((result.input_tokens || 0) * pricing[:input]) + ((result.output_tokens || 0) * pricing[:output])
+        if (cache_r > 0 || cache_w > 0) && pricing[:cache_read]
+          cost -= cache_r * pricing[:input]
+          cost += cache_r * pricing[:cache_read]
+          cost += cache_w * (pricing[:cache_write] - pricing[:input])
+        end
+        parts << "~$#{'%.4f' % cost}"
+      end
+      parts.join(' | ')
     end
 
     def debug_output_flags(content_text, msg)

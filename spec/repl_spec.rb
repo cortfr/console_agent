@@ -762,7 +762,7 @@ RSpec.describe RailsConsoleAi::Repl do
       )
 
       engine = repl.instance_variable_get(:@engine)
-      _result, _msgs, _in, _out = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
+      _result, _msgs, _stats = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
 
       # Should have called 4 times (3 tool rounds + final)
       expect(call_count).to eq(4)
@@ -792,7 +792,7 @@ RSpec.describe RailsConsoleAi::Repl do
       )
 
       engine = repl.instance_variable_get(:@engine)
-      _result, _msgs, _in, _out = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
+      _result, _msgs, _stats = engine.send(:send_query_with_tools, [{ role: :user, content: 'show tables' }])
 
       # Should break at 5 (LOOP_BREAK_THRESHOLD), not run all 200 rounds
       expect(call_count).to eq(5)
