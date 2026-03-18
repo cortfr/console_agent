@@ -146,52 +146,6 @@ RSpec.describe RailsConsoleAi::Tools::Registry do
     end
   end
 
-  describe 'allow_code_execution gating' do
-    let(:executor) { RailsConsoleAi::Executor.new(binding) }
-
-    after do
-      RailsConsoleAi.configure { |c| c.channels = {} }
-    end
-
-    it 'registers execute_code when allow_code_execution is not configured' do
-      channel = double('channel', mode: 'slack', user_identity: 'frank')
-      reg = described_class.new(executor: executor, channel: channel)
-      names = reg.definitions.map { |d| d[:name] }
-      expect(names).to include('execute_code', 'execute_plan')
-    end
-
-    it 'registers execute_code when user is in allow_code_execution list' do
-      RailsConsoleAi.configure do |c|
-        c.channels = { 'slack' => { 'allow_code_execution' => ['frank'] } }
-      end
-      channel = double('channel', mode: 'slack', user_identity: 'frank')
-      reg = described_class.new(executor: executor, channel: channel)
-      names = reg.definitions.map { |d| d[:name] }
-      expect(names).to include('execute_code', 'execute_plan')
-    end
-
-    it 'does not register execute_code when user is NOT in allow_code_execution list' do
-      RailsConsoleAi.configure do |c|
-        c.channels = { 'slack' => { 'allow_code_execution' => ['frank'] } }
-      end
-      channel = double('channel', mode: 'slack', user_identity: 'alice')
-      reg = described_class.new(executor: executor, channel: channel)
-      names = reg.definitions.map { |d| d[:name] }
-      expect(names).not_to include('execute_code')
-      expect(names).not_to include('execute_plan')
-    end
-
-    it 'registers execute_code when allow_code_execution is ALL' do
-      RailsConsoleAi.configure do |c|
-        c.channels = { 'slack' => { 'allow_code_execution' => 'ALL' } }
-      end
-      channel = double('channel', mode: 'slack', user_identity: 'anyone')
-      reg = described_class.new(executor: executor, channel: channel)
-      names = reg.definitions.map { |d| d[:name] }
-      expect(names).to include('execute_code', 'execute_plan')
-    end
-  end
-
   describe '#execute' do
     it 'returns error for unknown tool' do
       result = registry.execute('nonexistent', {})

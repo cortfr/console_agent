@@ -368,13 +368,6 @@ module RailsConsoleAi
       def register_execute_plan
         return unless @executor
 
-        # Check per-channel code execution permission
-        if @channel
-          unless RailsConsoleAi.configuration.username_allowed?(@channel.mode, 'allow_code_execution', @channel.user_identity)
-            return
-          end
-        end
-
         register(
           name: 'execute_code',
           description: 'Execute Ruby code in the Rails console and return the result. Use this for all code execution — simple queries, data lookups, reports, etc. The output of puts/print statements is automatically shown to the user. The return value is sent back to you so you can summarize the findings.',
@@ -419,12 +412,8 @@ module RailsConsoleAi
         # Show the code to the user
         @executor.display_code_block(code)
 
-        # Slack: execute directly, suppress display (output goes back to LLM as tool result).
-        # Console: show code and confirm before executing, display output directly.
-        exec_result = if @channel&.mode == 'slack'
-                        @executor.execute(code, display: false)
-                      elsif RailsConsoleAi.configuration.auto_execute
-                        @executor.execute(code, display: false)
+        exec_result = if @channel&.mode == 'slack' || RailsConsoleAi.configuration.auto_execute
+                        @executor.execute(code)
                       else
                         @executor.confirm_and_execute(code)
                       end

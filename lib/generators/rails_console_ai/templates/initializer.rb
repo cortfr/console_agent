@@ -86,7 +86,7 @@ RailsConsoleAi.configure do |config|
   # config.channels = {
   #   'slack' => {
   #     'allowed_usernames' => ['alice', 'bob'],                          # who can use the bot (or 'ALL')
-  #     'allow_code_execution' => ['alice'],                              # who can run code (nil = everyone)
+  #     'allow_code_execution' => ['alice'],                              # who can run code directly via ``` (nil = everyone)
   #     'pinned_memory_tags' => ['sharding'],
   #     'bypass_guards_for_methods' => ['ChangeApproval#approve_by!']
   #   },
