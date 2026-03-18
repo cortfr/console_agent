@@ -1095,6 +1095,12 @@ module RailsConsoleAi
         else
           truncate(result, 80)
         end
+      when 'execute_code'
+        lines = result.split("\n").reject { |l| l.strip.empty? }
+        output_lines = lines.select { |l| !l.start_with?('Output:') && !l.start_with?('Return value:') }
+        summary = output_lines.first(2).map { |l| l.strip }.join('; ')
+        summary = truncate(summary, 70) if summary.length > 70
+        "#{output_lines.length} lines: #{summary}"
       when 'execute_plan'
         steps_done = result.scan(/^Step \d+/).length
         steps_done > 0 ? "#{steps_done} steps executed" : truncate(result, 80)
