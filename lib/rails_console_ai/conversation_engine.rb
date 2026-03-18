@@ -431,6 +431,16 @@ module RailsConsoleAi
       conversation_messages(messages, **opts)
     end
 
+    def display_conversation_to(io)
+      messages = trim_large_outputs(@history)
+      system_prompt = context
+      require 'rails_console_ai/tools/registry'
+      tools = Tools::Registry.new(executor: @executor, channel: @channel) rescue nil
+      opts = { io: io, prefix: "", d: "", r: "" }
+      conversation_summary(messages, system_prompt, tools, **opts)
+      conversation_messages(messages, **opts)
+    end
+
     def context
       base = @context_base ||= context_builder.build
       parts = [base]

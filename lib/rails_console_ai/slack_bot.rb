@@ -752,13 +752,9 @@ module RailsConsoleAi
       history = engine.history
       return "No conversation history yet." if history.empty?
 
-      msg_count = history.length
-      chars = history.sum { |m| m[:content].to_s.length }
-      user_msgs = history.count { |m| m[:role].to_s == 'user' }
-      asst_msgs = history.count { |m| m[:role].to_s == 'assistant' }
-      name_str = engine.session_name ? " (*#{engine.session_name}*)" : ""
-
-      "Context#{name_str}: #{msg_count} messages (#{user_msgs} user, #{asst_msgs} assistant), ~#{chars} chars"
+      buf = StringIO.new
+      engine.send(:display_conversation_to, buf)
+      "```\n#{buf.string}```"
     end
 
     def count_bot_messages(channel_id, thread_ts)
