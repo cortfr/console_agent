@@ -216,7 +216,20 @@ module RailsConsoleAi
 
       loop do
         case answer
-        when 'y', 'yes', 'a'
+        when 'a', 'auto'
+          RailsConsoleAi.configuration.auto_execute = true
+          if @channel
+            @channel.display_dim("Auto-execute: ON")
+          else
+            $stdout.puts colorize("Auto-execute: ON", :cyan)
+          end
+          result = execute(code)
+          if @last_safety_error
+            return nil unless danger_allowed?
+            return offer_danger_retry(code)
+          end
+          return result
+        when 'y', 'yes'
           result = execute(code)
           if @last_safety_error
             return nil unless danger_allowed?
@@ -355,9 +368,9 @@ module RailsConsoleAi
     def execute_prompt
       guards = RailsConsoleAi.configuration.safety_guards
       if !guards.empty? && guards.enabled? && danger_allowed?
-        "Execute? [y/N/danger] "
+        "Execute? [y/N/a/danger] "
       else
-        "Execute? [y/N] "
+        "Execute? [y/N/a] "
       end
     end
 
