@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0]
+
+- Add `save_skill` tool
+- Add targeted single-memory recall to avoid extraneous results
+- Summarize memory recall output
+- Fix Bedrock blank content handling
+- Improve debug output and fix `trim_outputs` in Bedrock provider
+- Preserve activated skills in conversation without truncating
+- Show executed code in Slack log
+- Include columns in `describe_model` to reduce tool calls
+- Show less error detail in Slack channel
+- Show thinking text before `execute_code` prompt in console
+- Allow code execution without safety guards
+- Add Slack configuration option to prevent all users from executing code
+- Detect LLM tool loops and break out
+- Refactor output truncation to fix LLM not seeing all needed outputs
+- Show cache usage in `display_usage`
+- Fix `recall_output` forcing expansion in later turns
+- Fix conversation debug to show "tool_result" instead of "user"
+- Make `/context` and `!context` show the same as debug output
+- Improve `!context` handling in Slack
+
 ## [0.22.0]
 
 - Fix blank content block handling in Bedrock provider
