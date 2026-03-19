@@ -219,7 +219,7 @@ module RailsConsoleAi
         when 'a', 'auto'
           RailsConsoleAi.configuration.auto_execute = true
           if @channel
-            @channel.display_dim("Auto-execute: ON")
+            @channel.display_status("Auto-execute: ON")
           else
             $stdout.puts colorize("Auto-execute: ON", :cyan)
           end

@@ -49,7 +49,7 @@ module RailsConsoleAi
           conversation << { role: :assistant, content: @_last_result_text }
           conversation << { role: :user, content: error_msg }
 
-          @channel.display_dim("  Ran into an issue, trying a different approach...")
+          @channel.display_status("  Ran into an issue, trying a different approach...")
           exec_result, code, executed = one_shot_round(conversation)
         end
 
@@ -114,7 +114,7 @@ module RailsConsoleAi
 
       status = send_and_execute
       if status == :error
-        @channel.display_dim("  Ran into an issue, trying a different approach...")
+        @channel.display_status("  Ran into an issue, trying a different approach...")
         send_and_execute
       end
     end
@@ -232,7 +232,7 @@ module RailsConsoleAi
         @channel.display_warning("No code to retry.")
         return
       end
-      @channel.display_dim("  Retrying last code...")
+      @channel.display_status("  Retrying last code...")
       execute_direct(code)
     end
 
@@ -790,19 +790,19 @@ module RailsConsoleAi
 
       max_rounds.times do |round|
         if @channel.cancelled?
-          @channel.display_dim("  Cancelled.")
+          @channel.display_status("  Cancelled.")
           break
         end
 
         if round == 0
-          @channel.display_dim("  Thinking...")
+          @channel.display_status("  Thinking...")
         else
           if last_thinking
             last_thinking.split("\n").each do |line|
-              @channel.display_dim("  #{line}")
+              @channel.display_thinking("  #{line}")
             end
           end
-          @channel.display_dim("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
+          @channel.display_status("  #{llm_status(round, messages, total_input, last_thinking, last_tool_names)}")
         end
 
         # Trim large tool outputs between rounds to prevent context explosion.
@@ -856,7 +856,7 @@ module RailsConsoleAi
                           else
                             "No matching outputs found with id(s) #{ids.join(', ')}."
                           end
-            @channel.display_dim("     #{tool_result}")
+            @channel.display_status("     #{tool_result}")
             tool_msg = provider.format_tool_result(tc[:id], tool_result)
             messages << tool_msg
             new_messages << tool_msg
@@ -865,7 +865,7 @@ module RailsConsoleAi
 
           # Display any pending LLM text before executing the tool
           if last_thinking
-            last_thinking.split("\n").each { |line| @channel.display_dim("  #{line}") }
+            last_thinking.split("\n").each { |line| @channel.display_thinking("  #{line}") }
             last_thinking = nil
           end
 
@@ -879,7 +879,7 @@ module RailsConsoleAi
 
             preview = compact_tool_result(tc[:name], tool_result)
             cached_tag = tools.last_cached? ? " (cached)" : ""
-            @channel.display_dim("     #{preview}#{cached_tag}")
+            @channel.display_status("     #{preview}#{cached_tag}")
           end
 
           if RailsConsoleAi.configuration.debug
@@ -908,10 +908,10 @@ module RailsConsoleAi
           tool_call_counts[key] += 1
 
           if tool_call_counts[key] >= LOOP_BREAK_THRESHOLD
-            @channel.display_dim("  Loop detected: #{tc[:name]} called #{tool_call_counts[key]} times with same args — stopping.")
+            @channel.display_status("  Loop detected: #{tc[:name]} called #{tool_call_counts[key]} times with same args — stopping.")
             exhausted = true
           elsif tool_call_counts[key] >= LOOP_WARN_THRESHOLD
-            @channel.display_dim("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
+            @channel.display_status("  Warning: #{tc[:name]} called #{tool_call_counts[key]} times with same args — consider a different approach.")
             messages << { role: :user, content: "You are repeating the same tool call (#{tc[:name]}) with the same arguments. This is not making progress. Try a different approach or provide your answer now." }
           end
         end

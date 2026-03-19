@@ -443,10 +443,10 @@ module RailsConsoleAi
         Thread.current.report_on_exception = false
         Thread.current[:log_prefix] = "[#{channel_id}/#{thread_ts}]#{channel_log_tag(channel_id)} @#{user_name}"
         begin
-          channel.display_dim("_session: #{channel_id}/#{thread_ts}_")
+          channel.display_status("_session: #{channel_id}/#{thread_ts}_")
           if restored
             puts "Restored session for thread #{thread_ts} (#{engine.history.length} messages)"
-            channel.display_dim("_(session restored — continuing from previous conversation)_")
+            channel.display_status("_(session restored — continuing from previous conversation)_")
           end
           engine.process_message(text)
         rescue => e

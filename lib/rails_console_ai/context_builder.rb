@@ -97,7 +97,8 @@ module RailsConsoleAi
         - Give ONE concise answer. Do not offer multiple alternatives or variations.
         - For multi-step tasks, use execute_plan to break the work into small, clear steps.
         - For simple queries, use the execute_code tool.
-        - Include a brief one-line explanation before or after executing code.
+        - Before calling tools, briefly state what you're about to do (e.g., "Let me check the
+          user's migration status." or "I'll look up the table structure."). Keep it to one sentence.
         - Use the app's actual model names, associations, and schema.
         - Prefer ActiveRecord query interface over raw SQL.
         - For destructive operations, add a comment warning.

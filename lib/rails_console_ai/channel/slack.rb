@@ -28,23 +28,21 @@ module RailsConsoleAi
         post(strip_ansi(text))
       end
 
-      def display_dim(text)
-        raw = strip_ansi(text)
-        stripped = raw.strip
+      def display_thinking(text)
+        stripped = strip_ansi(text).strip
+        return if stripped.empty?
+        post(stripped)
+      end
+
+      def display_status(text)
+        stripped = strip_ansi(text).strip
+        return if stripped.empty?
 
         if stripped =~ /\AThinking\.\.\.|\AAttempting to fix|\ACancelled|\A_session:/
           post(stripped)
-        elsif stripped =~ /\ACalling LLM/
-          # Technical LLM round status — suppress in Slack
-          @output_log.write("#{stripped}\n")
-          STDOUT.puts "#{@log_prefix} (dim) #{stripped}"
-        elsif raw =~ /\A {2,4}\S/ && stripped.length > 10
-          # LLM thinking text (2-space indent from conversation engine) — show as status
-          post(stripped)
         else
-          # Tool result previews (5+ space indent) and other technical noise — log only
           @output_log.write("#{stripped}\n")
-          STDOUT.puts "#{@log_prefix} (dim) #{stripped}"
+          STDOUT.puts "#{@log_prefix} (status) #{stripped}"
         end
       end
 
@@ -112,9 +110,9 @@ module RailsConsoleAi
 
       def system_instructions
         <<~INSTRUCTIONS.strip
-          ## Response Formatting (Slack Channel)
+          ## Slack Channel
 
-          You are responding to non-technical users in Slack. Follow these rules:
+          You are responding in a Slack thread.
 
           ## Code Execution
           - ALWAYS use the `execute_code` tool to run Ruby code. Do NOT put code in markdown
@@ -132,11 +130,8 @@ module RailsConsoleAi
             123  John Smith        john@example.com
             456  Jane Doe          jane@example.com
             ```
-          - Use `puts` with formatted output instead of returning arrays or hashes
-          - Summarize findings in plain, simple language
-          - Do NOT show technical details like SQL queries, token counts, or class names
-          - Keep explanations simple and jargon-free
-          - Never return raw Ruby objects — always present data in a human-readable way
+          - Use `puts` with formatted output instead of returning arrays or hashes.
+          - Never return raw Ruby objects — always present data in a human-readable way.
           - The output of `puts` in your code is automatically shown to the user. Do NOT
             repeat or re-display data that your code already printed via `puts`.
             Just add a brief summary after (e.g. "10 events found" or "Let me know if you need more detail").

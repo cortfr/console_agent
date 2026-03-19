@@ -14,7 +14,11 @@ module RailsConsoleAi
         $stdout.puts colorize(text, :cyan)
       end
 
-      def display_dim(text)
+      def display_thinking(text)
+        $stdout.puts "\e[2m#{text}\e[0m"
+      end
+
+      def display_status(text)
         $stdout.puts "\e[2m#{text}\e[0m"
       end
 

@@ -2,7 +2,8 @@ module RailsConsoleAi
   module Channel
     class Base
       def display(text);            raise NotImplementedError; end
-      def display_dim(text);        raise NotImplementedError; end
+      def display_thinking(text);    raise NotImplementedError; end
+      def display_status(text);      raise NotImplementedError; end
       def display_warning(text);    raise NotImplementedError; end
       def display_error(text);      raise NotImplementedError; end
       def display_code(code);       raise NotImplementedError; end
