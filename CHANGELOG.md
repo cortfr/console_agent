@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.0]
+
+- Refactor thinking text display and include in Slack with more technical detail
+- Add `a` command to trigger auto-accept mode
+- Include code output in Slack server logs
+- Fix Bedrock issue after declining code execution
+- Fix `allow_code_execution` configuration
+
 ## [0.23.0]
 
 - Add `save_skill` tool
